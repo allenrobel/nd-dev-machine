@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    ~/Library/LaunchAgents/com.user.container.nd-dev.plist
+    Boots the nd-dev container machine after the container system service is ready.
+
+    The 15-second sleep is intentional: container-apiserver needs time to
+    fully initialise after login before a machine boot can succeed. Tune this
+    down after a few reboots once you're confident in the timing on your M4 Air.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.container.nd-dev</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <!-- sleep gives container-apiserver time to start; the trailing
+             "true" command exits cleanly so launchd doesn't restart us -->
+        <string>sleep 15 &amp;&amp; /usr/local/bin/container machine run -n nd-dev -- true</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- One-shot: don't restart after the initial boot -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/container-nd-dev-boot.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/container-nd-dev-boot.err</string>
+</dict>
+</plist>

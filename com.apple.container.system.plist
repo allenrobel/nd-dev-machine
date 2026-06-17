@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    ~/Library/LaunchAgents/com.apple.container.system.plist
+    Starts the container-apiserver (background services) at login.
+    Must be loaded BEFORE the nd-dev machine plist.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.apple.container.system</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/container</string>
+        <string>system</string>
+        <string>start</string>
+    </array>
+
+    <!-- Start automatically when you log in -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Don't restart if it exits cleanly (system start is one-shot) -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/container-system.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/container-system.err</string>
+</dict>
+</plist>
