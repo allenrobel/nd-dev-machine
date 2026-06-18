@@ -122,10 +122,13 @@ delegates test/lint execution into the machine via the `ndtest` /
 
 For long agentic sessions where Claude is running tests, inspecting
 failures, and patching code in a tight loop, run Claude Code from
-inside the machine instead.  Note, currently you need to define HOME
-before running `claude`.  Also, if you are connecting to MCP servers
-over the network, these connections currently fail.  Local (stdio)
-MCP servers work.
+inside the machine instead.
+
+**NOTES**
+
+- Currently you need to define HOME before running `claude`.
+- If you need to connect to Apple's Xcode mcpbridge, this won't work within
+  the machine since it uses xcrun which isn't available on Ubuntu.
 
 ```bash
 ndm   # drops you into the machine
@@ -133,7 +136,8 @@ HOME=/Users/<your-macos-username>; claude
 ```
 
 Claude Code credentials are stored in `~/.claude/` on your macOS home,
-which is auto-mounted inside the machine — no re-authentication needed.
+which is auto-mounted inside the machine — no re-authentication needed,
+but remember to define HOME first!
 
 ## pyproject.toml configuration
 
