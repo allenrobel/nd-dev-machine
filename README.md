@@ -16,17 +16,17 @@ on real Linux while continuing to edit code in your macOS IDE. Because the
 collection path is identical inside and outside the machine via virtiofs,
 there is no sync step and no path translation.
 
-```text
+```
 Edit in VS Code on macOS  →  test with 'ndtest' in the machine  →  commit on macOS
 ```
 
 ## Prerequisites
 
 | Requirement | Notes |
-| --- | --- |
+|---|---|
 | Apple Silicon Mac (M1 or later) | Intel not supported by Apple's container tool |
 | macOS 26 (Tahoe) or macOS 27 | Earlier versions have networking limitations |
-| [Apple container CLI](https://github.com/apple/container) installed | `brew install apple/container/container` or from releases |
+| [Apple container CLI](https://github.com/apple/container/releases) installed | Download `container-1.0.0-installer-signed.pkg` from the [releases page](https://github.com/apple/container/releases) (scroll to Assets) or use the [direct link](https://github.com/apple/container/releases/download/1.0.0/container-1.0.0-installer-signed.pkg). Works on macOS 26+, no developer version required. |
 | Claude Code (`claude`) authenticated | Required for agentic sessions inside the machine |
 | ~12 GB free disk space | Ubuntu base + ansible-test Docker images |
 
@@ -34,7 +34,7 @@ Edit in VS Code on macOS  →  test with 'ndtest' in the machine  →  commit on
 
 All files live flat in one directory (no subdirectories required):
 
-```bash
+```
 nd-dev-machine/
 ├── README.md                           ← you are here
 ├── setup.sh                            ← one-time setup script
@@ -76,11 +76,9 @@ source ~/.zshrc
 
 ## Daily usage
 
-Replace username fatcat with your username in the examples below.
-
 ```bash
 # Drop into an interactive Linux shell inside the machine
-# (your prompt changes to fatcat@nd-dev; type 'exit' to return to macOS)
+# (your prompt changes to arobel@nd-dev; type 'exit' to return to macOS)
 ndm
 
 # Run all sanity checks (--venv, recommended for local dev)
@@ -169,7 +167,7 @@ uv sync
 ### virtiofs home mount
 
 Your macOS `$HOME` is mounted read-write inside the machine at the same
-path (e.g. `/Users/username`). This is a virtiofs share managed by the
+path (e.g. `/Users/arobel`). This is a virtiofs share managed by the
 Apple Virtualization framework — edits on either side are immediately
 visible on the other. No rsync, no Docker volume, no path difference.
 
@@ -255,7 +253,6 @@ bash setup.sh
 ```
 
 **Machine doesn't start at login**
-
 ```bash
 ndlogs   # check /tmp/container-nd-dev-boot.err
 # If the 15s delay isn't enough, edit the plist:
@@ -266,25 +263,22 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.container.nd-de
 ```
 
 **`ansible-test --docker default` fails with "dbus" or "user session" errors**
-
 ```bash
 # Re-enable user lingering inside the machine
 ndm sudo loginctl enable-linger $(whoami)
 ```
 
 **`ansible-test --docker default` fails with "insufficient UIDs/GIDs"**
-
 ```bash
 # Check subuid/subgid inside the machine
 ndm cat /etc/subuid /etc/subgid
-# Should show: fatcat:100000:65536 (not ubuntu:...)
+# Should show: arobel:100000:65536 (not ubuntu:...)
 # If wrong, fix and migrate:
-ndm sudo sed -i 's/^ubuntu:/fatcat:/' /etc/subuid /etc/subgid
+ndm sudo sed -i 's/^ubuntu:/arobel:/' /etc/subuid /etc/subgid
 ndm podman system migrate
 ```
 
 **`/dev/net/tun: Permission denied`**
-
 ```bash
 ndm sudo chmod 0666 /dev/net/tun
 ```
