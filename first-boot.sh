@@ -195,12 +195,26 @@ patch_rc() {
 ${MARKER}
 export ANSIBLE_TEST_PREFER_PODMAN=1
 export PATH="\$HOME/.local/bin:\$PATH"
+# Per-platform uv venv: the macOS host and this Linux machine share the
+# collection tree via virtiofs, so one .venv path can't serve both (bin/python
+# and compiled .so files are platform-specific). \$(uname ...) is evaluated at
+# shell startup inside the machine -> e.g. .venv-Linux-aarch64. uv resolves a
+# relative UV_PROJECT_ENVIRONMENT per project root, so this is safe for any uv
+# project in the machine.
+export UV_PROJECT_ENVIRONMENT=".venv-\$(uname -s)-\$(uname -m)"
 # ---------------------------------
 EOF
     echo "[create-user] Patched ${RC}"
 }
 
+# ${CONTAINER_HOME}/.bashrc usually does NOT exist (the macOS home has no bash
+# rc), so that patch is typically a no-op. The interactive `ndm` session is a
+# non-login interactive bash — the runtime does NOT start a login shell, so
+# /etc/profile and /etc/profile.d/*.sh are never sourced there. /etc/bash.bashrc
+# IS read by interactive bash (login and non-login), so patching it is what
+# actually gets these vars into interactive `ndm` shells.
 patch_rc "${CONTAINER_HOME}/.bashrc"
 patch_rc "${CONTAINER_HOME}/.zshrc"
+patch_rc /etc/bash.bashrc
 
 echo "[create-user] Done."

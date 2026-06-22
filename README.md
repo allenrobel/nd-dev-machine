@@ -159,15 +159,49 @@ dependencies = [
 ]
 ```
 
-Create and activate the venv inside the machine:
+Create and activate the venv inside the machine. Because your macOS `$HOME`
+and the Linux machine share the collection tree via virtiofs, the venv path
+is suffixed by platform/arch so the macOS and Linux venvs never collide
+(a venv's `bin/python` and compiled `.so` files are platform-specific):
 
 ```bash
 ndm
 cd ~/ansible_collections/cisco/nd
-uv venv --python 3.12 .venv --prompt ansible-nd --clear
-source .venv/bin/activate
-uv sync
+VENV=".venv-$(uname -s)-$(uname -m)"          # e.g. .venv-Linux-aarch64 here
+uv venv --python 3.12 "$VENV" --prompt ansible-nd --clear
+source "$VENV/bin/activate"
+UV_PROJECT_ENVIRONMENT="$VENV" uv sync
 ```
+
+`UV_PROJECT_ENVIRONMENT` is set for you inside the machine, so `uv` targets the
+right per-platform venv without the inline prefix — two mechanisms cover the
+two shell types:
+
+- **Interactive `ndm` sessions** (a non-login interactive bash) read it from
+  `/etc/bash.bashrc`, which `first-boot.sh` patches.
+- **Non-interactive `nd*` wrappers** (`ndm uv sync`, `ndmypy`, …) run a script
+  directly rather than a login/interactive shell, so `nd-dev.sh` exports the
+  var into that script itself.
+
+(`/etc/profile.d` is *not* used: the interactive session is not a login shell,
+so it never sources `/etc/profile`.)
+
+If you want editor/LSP support on **macOS** (Pylance, ansible-lint in VS Code),
+create the host counterpart and point your editor at it explicitly — do not
+symlink `.venv`, or the machine would follow it and get the macOS binaries:
+
+```bash
+# On macOS, from the collection root:
+uv venv --python 3.12 ".venv-$(uname -s)-$(uname -m)" --prompt ansible-nd   # .venv-Darwin-arm64
+```
+
+```jsonc
+// .vscode/settings.json
+"python.defaultInterpreterPath": "${workspaceFolder}/.venv-Darwin-arm64/bin/python"
+```
+
+Both `.venv` and `.venv-*/` are gitignored, which also keeps `ansible-test`
+from scanning them (it enumerates files via git).
 
 ## How it works (architecture notes)
 

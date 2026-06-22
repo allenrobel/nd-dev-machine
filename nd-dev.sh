@@ -35,6 +35,11 @@ export HOME="${_NDM_HOME}"
 export PATH="${_NDM_PATH}"
 export USER="${_NDM_USER}"
 export LOGNAME="${_NDM_USER}"
+# Per-platform uv venv: macOS and the Linux machine share this tree via
+# virtiofs, so a single .venv path can't serve both (binaries/.so files are
+# platform-specific). The \$(uname ...) is escaped so it is evaluated at
+# runtime *inside* the machine (Linux) — yielding e.g. .venv-Linux-aarch64.
+export UV_PROJECT_ENVIRONMENT=".venv-\$(uname -s)-\$(uname -m)"
 cd "${cwd}" || { echo "ERROR: could not cd to ${cwd}"; exit 1; }
 $@
 NDMSCRIPT
