@@ -45,7 +45,7 @@ nd-dev-machine/
 ├── CLAUDE.md                           ← Claude Code instructions for the ND collection
 ├── com.apple.container.system.plist    ← LaunchAgent: start container system at login
 ├── com.user.container.nd-dev.plist     ← LaunchAgent: boot nd-dev machine at login
-├── .gitignore                          ← ignores .tmp/
+├── .gitignore                          ← ignores .tmp/ and ndm-env.sh
 └── .tmp/                               ← temp scripts (gitignored, auto-created at runtime)
 ```
 
