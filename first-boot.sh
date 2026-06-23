@@ -159,6 +159,19 @@ echo "[create-user] Installing pipx..."
 apt-get install -y pipx > /dev/null 2>&1     || echo "[create-user] WARNING: pipx apt install failed"
 
 echo "[create-user] Installing Python CLI tools via pipx..."
+# pydantic must be injected into EVERY pipx venv that imports the collection's
+# code (pytest runs the orchestrator unit tests; pylint and mypy import the
+# models for analysis). Each pipx venv is isolated, so a system/user pydantic
+# is NOT visible inside them — without an explicit inject, pytest silently runs
+# under the collection's pydantic compat shim (model_post_init never fires) and
+# the orchestrator tests pass for the wrong reason.
+#
+# Version is capped to match the collection's own pin in requirements.txt /
+# pyproject.toml (pydantic>=2.11,<2.12, issue #344): pydantic>=2.12 hard-errors
+# at class construction on NDBaseOrchestrator. Keeping the cap here ensures the
+# machine's local test env matches CI instead of pulling 2.12+ on rebuild.
+PYDANTIC_PIN='pydantic>=2.11,<2.12'
+#
 # Run pipx as the target user but with HOME explicitly set to CONTAINER_HOME
 # (the virtiofs-mounted macOS home). We cannot rely on 'su -' to set the
 # correct HOME because /etc/passwd may still reflect the pre-rename path
@@ -169,19 +182,19 @@ su - "${CONTAINER_USER}" -c "
     export PATH='${CONTAINER_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
     pipx install ansible-lint &&
     pipx install pylint &&
-    pipx inject pylint pydantic &&
+    pipx inject pylint '${PYDANTIC_PIN}' &&
     pipx install mypy &&
-    pipx inject mypy pydantic &&
+    pipx inject mypy '${PYDANTIC_PIN}' &&
     pipx install pytest &&
-    pipx inject pytest pytest-ansible &&
+    pipx inject pytest pytest-ansible '${PYDANTIC_PIN}' &&
     echo '[create-user] pipx installs complete'
 " || echo "[create-user] WARNING: pipx installs failed — run manually inside the machine:
     sudo apt install -y pipx
     export HOME=/Users/\$(whoami)
     pipx install ansible-lint
-    pipx install pylint && pipx inject pylint pydantic
-    pipx install mypy && pipx inject mypy pydantic
-    pipx install pytest && pipx inject pytest pytest-ansible"
+    pipx install pylint && pipx inject pylint 'pydantic>=2.11,<2.12'
+    pipx install mypy   && pipx inject mypy   'pydantic>=2.11,<2.12'
+    pipx install pytest && pipx inject pytest pytest-ansible 'pydantic>=2.11,<2.12'"
 
 # ── Shell environment additions ────────────────────────────────────────────────
 MARKER="# --- nd-dev container machine ---"

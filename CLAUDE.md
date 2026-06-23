@@ -53,6 +53,29 @@ ndmypy plugins/modules/
 
 ---
 
+## Unit Tests and pydantic
+
+Run the collection's pytest unit tests inside the machine with `ndpytest`
+(e.g. `ndpytest tests/unit/...`).
+
+The `pytest`, `pylint`, and `mypy` tools live in **isolated pipx venvs**, each
+with `pydantic` injected and capped to `pydantic>=2.11,<2.12` (matches the
+collection pin / issue #344). Do NOT rely on a system/user pydantic — it is not
+visible inside a pipx venv.
+
+If unit tests behave oddly (e.g. `model_post_init` never fires, orchestrator
+tests passing for the wrong reason), the `pytest` venv is likely missing
+pydantic and running under the compat shim. Restore it with:
+
+```bash
+ndm pipx inject pytest 'pydantic>=2.11,<2.12'
+```
+
+This is provisioned automatically by `first-boot.sh`; see the README
+"Python CLI tooling" section for details.
+
+---
+
 ## Running a Single Command Inside the Machine
 
 ```bash

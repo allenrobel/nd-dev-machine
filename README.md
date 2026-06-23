@@ -233,6 +233,29 @@ and `slirp4netns` need to open it for rootless networking. `first-boot.sh`
 sets it to `0666` and writes a udev rule to make this persistent across
 container restarts.
 
+### Python CLI tooling (pipx + capped pydantic)
+
+The per-user dev tools — `ansible-lint`, `pylint`, `mypy`, and `pytest` — are
+installed by `first-boot.sh` via **pipx**, each in its own isolated venv under
+`~/.local/share/pipx/venvs/`. Because those venvs are isolated, a system- or
+user-level `pydantic` is **not** visible inside them. Every tool that imports
+the collection's models needs `pydantic` injected explicitly:
+
+| Tool | Why it needs pydantic |
+|---|---|
+| `pytest` | runs the orchestrator unit tests (instantiates the models) |
+| `pylint` | imports the models during static analysis |
+| `mypy` | uses the `pydantic.mypy` plugin and imports the models |
+
+All three injects are **capped to `pydantic>=2.11,<2.12`** to match the
+collection's own pin in `requirements.txt` / `pyproject.toml` (issue #344):
+`pydantic>=2.12` hard-errors at class construction on `NDBaseOrchestrator`.
+
+This matters for `pytest` in particular: with **no** pydantic in its venv, the
+collection silently falls back to its pydantic compat shim (where
+`model_post_init` never fires) and the orchestrator tests pass for the wrong
+reason. The cap keeps the machine's local test env matching CI on every rebuild.
+
 ### Auto-start at login
 
 Two LaunchAgents handle startup sequencing:
@@ -326,6 +349,25 @@ ndm podman system migrate
 
 ```bash
 ndm sudo chmod 0666 /dev/net/tun
+```
+
+**Unit tests pass locally but behave differently from CI (pydantic compat shim)**
+
+If `pydantic` is missing from the `pytest` pipx venv, the collection falls back
+to its compat shim — `model_post_init` never fires and the orchestrator tests
+pass for the wrong reason. Each pipx venv is isolated, so check and restore the
+capped pydantic per tool:
+
+```bash
+# Check the version inside each venv (should be 2.11.x, never >=2.12)
+for v in pytest pylint mypy; do
+  echo -n "$v: "; ndm ~/.local/share/pipx/venvs/$v/bin/python -c 'import pydantic; print(pydantic.VERSION)'
+done
+
+# Restore / re-cap if missing or >=2.12 (this is what first-boot.sh does)
+ndm pipx inject pytest 'pydantic>=2.11,<2.12'
+ndm pipx inject pylint 'pydantic>=2.11,<2.12'
+ndm pipx inject mypy   'pydantic>=2.11,<2.12'
 ```
 
 **`uv sync` fails with Python version conflicts**
