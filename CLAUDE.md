@@ -63,16 +63,21 @@ with `pydantic` injected and capped to `pydantic>=2.11,<2.12` (matches the
 collection pin / issue #344). Do NOT rely on a system/user pydantic — it is not
 visible inside a pipx venv.
 
+The `ndpytest` / `ndmypy` / `ndpylint` wrappers self-heal their own venv on
+every run (via `nddoctor.sh run <tool>`), so a drifted/missing pydantic is
+re-injected automatically before the tool runs. To check/heal all three venvs
+on demand (e.g. after a rebuild), run `nddoctor`.
+
 If unit tests behave oddly (e.g. `model_post_init` never fires, orchestrator
-tests passing for the wrong reason), the `pytest` venv is likely missing
-pydantic and running under the compat shim. Restore it with:
+tests passing — or failing — for the wrong reason), run `nddoctor` to confirm
+the venvs are healthy. Manual fallback:
 
 ```bash
 ndm pipx inject pytest 'pydantic>=2.11,<2.12'
 ```
 
-This is provisioned automatically by `first-boot.sh`; see the README
-"Python CLI tooling" section for details.
+This is provisioned by `first-boot.sh` and kept healthy by `nddoctor.sh`; see
+the README "Python CLI tooling" section for details.
 
 ---
 

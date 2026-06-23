@@ -15,7 +15,8 @@
 
 _NDM_USER="$(whoami)"
 _NDM_HOME="/Users/${_NDM_USER}"
-_NDM_TMPDIR="${_NDM_HOME}/nd-dev-machine/.tmp"
+_NDM_REPO="${_NDM_HOME}/nd-dev-machine"
+_NDM_TMPDIR="${_NDM_REPO}/.tmp"
 _NDM_PATH="${_NDM_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Internal helper — writes a script to the virtiofs mount and executes it.
@@ -93,19 +94,28 @@ function ndlint {
     _ndm_run "$(pwd)" ansible-lint "$@"
 }
 
-# Run mypy inside the machine
+# Verify/self-heal the pipx tool venvs (capped pydantic in pytest/pylint/mypy).
+# Run on demand, e.g. after a machine rebuild or if unit tests act up. The
+# ndmypy/ndpylint/ndpytest wrappers below also self-heal their own venv on each
+# invocation, so you rarely need to call this directly. See nddoctor.sh.
+function nddoctor {
+    _ndm_run "$_NDM_HOME" "$_NDM_REPO/nddoctor.sh" "$@"
+}
+
+# Run mypy inside the machine (self-heals mypy's pydantic first via nddoctor).
 function ndmypy {
-    _ndm_run "$(pwd)" mypy "$@"
+    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run mypy "$@"
 }
 
-# Run pylint inside the machine
+# Run pylint inside the machine (self-heals pylint's pydantic first).
 function ndpylint {
-    _ndm_run "$(pwd)" pylint "$@"
+    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run pylint "$@"
 }
 
-# Run pytest inside the machine
+# Run pytest inside the machine (self-heals pytest's pydantic first — without
+# it, the collection silently falls back to the pydantic compat shim).
 function ndpytest {
-    _ndm_run "$(pwd)" pytest "$@"
+    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run pytest "$@"
 }
 
 # Show nd-dev machine status

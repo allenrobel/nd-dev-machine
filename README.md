@@ -40,7 +40,8 @@ nd-dev-machine/
 ├── setup.sh                            ← one-time setup script
 ├── Dockerfile                          ← Ubuntu 24.04 + systemd + Podman + Claude Code
 ├── first-boot.sh                       ← user provisioning, runs once on first machine boot
-├── nd-dev.sh                           ← shell aliases (ndm, ndtest, ndlint, …)
+├── nddoctor.sh                         ← verify/self-heal the pipx tool venvs (capped pydantic)
+├── nd-dev.sh                           ← shell aliases (ndm, ndtest, ndlint, nddoctor, …)
 ├── ndm-env.sh                          ← env shim used by nd-dev.sh (auto-created by setup.sh)
 ├── CLAUDE.md                           ← Claude Code instructions for the ND collection
 ├── com.apple.container.system.plist    ← LaunchAgent: start container system at login
@@ -97,6 +98,9 @@ ndtest-docker --test validate-modules
 ndlint plugins/
 ndmypy plugins/modules/
 ndpylint plugins/modules/nd_my_module.py
+
+# Verify / self-heal the pipx tool venvs (capped pydantic in pytest/pylint/mypy)
+nddoctor
 
 # Check machine status and LaunchAgent boot logs
 ndstatus
@@ -256,6 +260,20 @@ collection silently falls back to its pydantic compat shim (where
 `model_post_init` never fires) and the orchestrator tests pass for the wrong
 reason. The cap keeps the machine's local test env matching CI on every rebuild.
 
+**Self-healing.** `first-boot.sh` injects these once at first boot, so any later
+drift (a failed inject, a partial manual recovery, a rebuild) could silently
+degrade the env. `nddoctor.sh` is the idempotent guard against that:
+
+```bash
+nddoctor          # check + heal all three venvs, print a status report
+```
+
+The `ndpytest`, `ndmypy`, and `ndpylint` wrappers each call `nddoctor.sh run
+<tool>` first, so they **self-heal their own venv on every invocation** (quiet
+when already healthy) before running the tool. In normal use you never need to
+run `nddoctor` by hand — it's there for an explicit check after a rebuild or when
+something looks off.
+
 ### Auto-start at login
 
 Two LaunchAgents handle startup sequencing:
@@ -355,8 +373,17 @@ ndm sudo chmod 0666 /dev/net/tun
 
 If `pydantic` is missing from the `pytest` pipx venv, the collection falls back
 to its compat shim — `model_post_init` never fires and the orchestrator tests
-pass for the wrong reason. Each pipx venv is isolated, so check and restore the
-capped pydantic per tool:
+pass (or fail) for the wrong reason. The one-command fix is `nddoctor`, which
+checks every venv and re-injects the capped pydantic where it is missing or
+out of range:
+
+```bash
+nddoctor          # check + heal pytest / pylint / mypy
+```
+
+The `ndpytest` / `ndmypy` / `ndpylint` wrappers also self-heal automatically, so
+you usually hit this only after a manual `pipx` operation. Manual fallback if you
+ever need it (this is exactly what `nddoctor` and `first-boot.sh` do):
 
 ```bash
 # Check the version inside each venv (should be 2.11.x, never >=2.12)
@@ -364,7 +391,7 @@ for v in pytest pylint mypy; do
   echo -n "$v: "; ndm ~/.local/share/pipx/venvs/$v/bin/python -c 'import pydantic; print(pydantic.VERSION)'
 done
 
-# Restore / re-cap if missing or >=2.12 (this is what first-boot.sh does)
+# Restore / re-cap if missing or >=2.12
 ndm pipx inject pytest 'pydantic>=2.11,<2.12'
 ndm pipx inject pylint 'pydantic>=2.11,<2.12'
 ndm pipx inject mypy   'pydantic>=2.11,<2.12'
