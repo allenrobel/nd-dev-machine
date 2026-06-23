@@ -28,7 +28,18 @@ function _ndm_run {
     shift
     local script
     mkdir -p "${_NDM_TMPDIR}"
-    script="${_NDM_TMPDIR}/cmd-$$.sh"
+    # Unique path per invocation via mktemp. A fixed name (e.g. cmd-$$.sh) collides
+    # when two _ndm_run calls run back-to-back in the same shell: call N's trailing
+    # `rm` churns the path while call N+1 writes/execs the SAME path, and virtiofs
+    # metadata coherence lags — surfacing as
+    # "cmd-...: cannot execute: required file not found". A fresh unique path is
+    # never re-touched, so there is nothing to race (mktemp is atomic, so this also
+    # holds across subshells/concurrent shells — a counter would not). No .sh
+    # suffix: the runtime execs by path via the shebang, so the extension is moot.
+    script="$(mktemp "${_NDM_TMPDIR}/cmd-XXXXXXXX")" || {
+        echo "ERROR: could not create temp script in ${_NDM_TMPDIR}" >&2
+        return 1
+    }
     # Write the script — all variables expanded on macOS side at write time
     cat > "${script}" << NDMSCRIPT
 #!/bin/bash
