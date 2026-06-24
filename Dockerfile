@@ -6,6 +6,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── System packages ────────────────────────────────────────────────────────────
 RUN apt-get update && \
+    # Apply latest security patches to base-image packages at build time so a
+    # stale base snapshot can't leave known-vulnerable packages in the image.
+    apt-get upgrade -y && \
     apt-get install -y \
         # systemd + minimal OS services
         dbus systemd openssh-server net-tools iproute2 \
