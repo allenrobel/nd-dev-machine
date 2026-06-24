@@ -216,6 +216,54 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+header "STEP 8 — Provision the macOS editor venv (.venv-Darwin-arm64)"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Editor IntelliSense only. VS Code / Pylance points at this host venv, so it
+# must contain the collection's third-party deps (ansible-core, pydantic,
+# requests-toolbelt, jsonpath-ng, lxml) for imports to resolve. This does NOT
+# violate the CLAUDE.md "no pip install / ansible-test on macOS" rule: that rule
+# governs *test execution*, which still runs exclusively inside nd-dev. Nothing
+# installed here is ever used to run tests.
+
+HOST_VENV_NAME=".venv-$(uname -s)-$(uname -m)"          # e.g. .venv-Darwin-arm64
+HOST_VENV_DIR="${ND_COLLECTION}/${HOST_VENV_NAME}"
+
+if ! command -v uv > /dev/null 2>&1; then
+    warn "uv not found on macOS PATH — skipping editor venv provisioning."
+    warn "Install uv (https://docs.astral.sh/uv/), then re-run setup.sh, or"
+    warn "provision manually per the README 'Python CLI tooling' section."
+elif [ ! -d "${ND_COLLECTION}" ]; then
+    warn "Collection not found at ${ND_COLLECTION} — skipping editor venv."
+    warn "Clone it, then re-run setup.sh to provision ${HOST_VENV_NAME}."
+else
+    if [ ! -x "${HOST_VENV_DIR}/bin/python" ]; then
+        step "Creating ${HOST_VENV_NAME}..."
+        ( cd "${ND_COLLECTION}" && uv venv --python 3.12 "${HOST_VENV_NAME}" --prompt ansible-nd )
+        ok "Created ${HOST_VENV_DIR}"
+    else
+        note "${HOST_VENV_NAME} already exists — syncing collection deps into it."
+    fi
+
+    step "Installing collection deps with 'uv sync' (full locked dev set)..."
+    if ( cd "${ND_COLLECTION}" && UV_PROJECT_ENVIRONMENT="${HOST_VENV_NAME}" uv sync ); then
+        ok "Editor venv provisioned: ${HOST_VENV_DIR}"
+        if "${HOST_VENV_DIR}/bin/python" -c \
+                "import ansible, pydantic, requests_toolbelt, jsonpath_ng, lxml" 2>/dev/null; then
+            ok "Imports resolve: ansible(-core), pydantic, requests_toolbelt, jsonpath_ng, lxml"
+        else
+            warn "uv sync completed but an import probe failed — review the 'uv sync' output above."
+        fi
+        note "Point your editor at it (one-time, see README):"
+        note "  \"python.defaultInterpreterPath\": \"\${workspaceFolder}/${HOST_VENV_NAME}/bin/python\""
+    else
+        warn "uv sync failed — editor IntelliSense may not resolve third-party imports."
+        warn "Retry manually:"
+        warn "  cd '${ND_COLLECTION}' && UV_PROJECT_ENVIRONMENT='${HOST_VENV_NAME}' uv sync"
+    fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 header "ALL DONE"
 # ─────────────────────────────────────────────────────────────────────────────
 
