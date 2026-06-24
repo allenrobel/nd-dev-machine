@@ -74,6 +74,7 @@ bash setup.sh
 5. Install LaunchAgents for auto-start at login
 6. Wire shell aliases into `~/.zshrc` / `~/.bashrc`
 7. Install `CLAUDE.md` into the ND collection root (skipped if `CLAUDE.md` already exists in the ND collection root)
+8. Provision the macOS editor venv (`.venv-Darwin-arm64`) with the collection's deps via `uv sync`, so VS Code / Pylance resolves third-party imports (editor IntelliSense only — see [pyproject.toml configuration](#pyprojecttoml-configuration))
 
 After setup, reload your shell:
 
