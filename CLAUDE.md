@@ -99,6 +99,19 @@ Do NOT `pip install` or run `ansible-test` directly on macOS for this
 collection. Always delegate to the machine to keep the environment consistent
 with CI.
 
+The one sanctioned macOS-side venv is the **editor venv**
+`.venv-Darwin-arm64`, which VS Code / Pylance points at for IntelliSense.
+`setup.sh` **STEP 8** provisions it on the host by running `uv sync` against
+`pyproject.toml` + `uv.lock` (full locked dev set, incl. `ansible-core`). This
+is editor import-resolution only — it is never used to run tests, so it does
+not conflict with the rule above. If imports stop resolving in the editor,
+re-run `setup.sh` (STEP 8 is idempotent) or, from the collection root:
+
+```bash
+VENV=".venv-$(uname -s)-$(uname -m)"          # .venv-Darwin-arm64
+UV_PROJECT_ENVIRONMENT="$VENV" uv sync
+```
+
 ---
 
 ## Machine Management
@@ -120,4 +133,6 @@ ndlogs                                  # check LaunchAgent boot logs
 - File paths are the same on macOS and inside the machine — use `$(pwd)`
   to preserve the caller's working directory.
 - Do not install Python packages on macOS for this collection; install
-  inside the machine using `ndm pip3 install --user <pkg>`
+  inside the machine using `ndm pip3 install --user <pkg>`. The sole
+  exception is the macOS editor venv `.venv-Darwin-arm64` (IntelliSense
+  only) — refresh it with `setup.sh` STEP 8 / `uv sync`, never by hand.
