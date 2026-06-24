@@ -16,14 +16,14 @@ on real Linux while continuing to edit code in your macOS IDE. Because the
 collection path is identical inside and outside the machine via virtiofs,
 there is no sync step and no path translation.
 
-```
+```text
 Edit in VS Code on macOS  →  test with 'ndtest' in the machine  →  commit on macOS
 ```
 
 ## Prerequisites
 
 | Requirement | Notes |
-|---|---|
+| --- | --- |
 | Apple Silicon Mac (M1 or later) | Intel not supported by Apple's container tool |
 | macOS 26 (Tahoe) or macOS 27 | Earlier versions have networking limitations |
 | [Apple container CLI](https://github.com/apple/container/releases) installed | Download `container-1.0.0-installer-signed.pkg` from the [releases page](https://github.com/apple/container/releases) (scroll to Assets) or use the [direct link](https://github.com/apple/container/releases/download/1.0.0/container-1.0.0-installer-signed.pkg). Works on macOS 26+, no developer version required. |
@@ -34,7 +34,7 @@ Edit in VS Code on macOS  →  test with 'ndtest' in the machine  →  commit on
 
 All files live flat in one directory (no subdirectories required):
 
-```
+```bash
 nd-dev-machine/
 ├── README.md                           ← you are here
 ├── setup.sh                            ← one-time setup script
@@ -52,10 +52,16 @@ nd-dev-machine/
 
 ## Setup
 
-Clone or copy this directory to your Mac, then:
+### Install Apple's container machine framework
+
+See Prerequisites above
+
+### Clone or copy this directory to your Mac
 
 ```bash
-cd ~/nd-dev-machine
+cd $HOME
+git clone https://github.com/allenrobel/nd-dev-machine.git
+cd $HOME/nd-dev-machine
 bash setup.sh
 ```
 
@@ -67,7 +73,7 @@ bash setup.sh
 4. Verify the home mount and `ansible-test` are working
 5. Install LaunchAgents for auto-start at login
 6. Wire shell aliases into `~/.zshrc` / `~/.bashrc`
-7. Install `CLAUDE.md` into the ND collection root
+7. Install `CLAUDE.md` into the ND collection root (skipped if `CLAUDE.md` already exists in the ND collection root)
 
 After setup, reload your shell:
 
@@ -128,7 +134,7 @@ For long agentic sessions where Claude is running tests, inspecting
 failures, and patching code in a tight loop, run Claude Code from
 inside the machine instead.
 
-**NOTES**
+## NOTES
 
 - Currently you need to define HOME before running `claude`.
 - If you need to connect to Apple's Xcode mcpbridge, this won't work within
@@ -224,7 +230,7 @@ required for this to work in the Apple VM environment, all applied
 automatically by `first-boot.sh`:
 
 | Setting | Why |
-|---|---|
+| --- | --- |
 | `pasta` rootless network backend | `slirp4netns` requires a D-Bus user session that isn't available early in boot; `pasta` avoids this |
 | `cgroupfs` cgroup manager | The VM doesn't expose a systemd user session for cgroup v2 management |
 | `seccomp=unconfined` | The ansible-test controller runs systemd as PID 1, which requires syscalls blocked by the default seccomp profile |
@@ -246,7 +252,7 @@ user-level `pydantic` is **not** visible inside them. Every tool that imports
 the collection's models needs `pydantic` injected explicitly:
 
 | Tool | Why it needs pydantic |
-|---|---|
+| --- | --- |
 | `pytest` | runs the orchestrator unit tests (instantiates the models) |
 | `pylint` | imports the models during static analysis |
 | `mypy` | uses the `pydantic.mypy` plugin and imports the models |
@@ -334,7 +340,7 @@ container system start
 bash setup.sh
 ```
 
-**Machine doesn't start at login**
+### Machine doesn't start at login
 
 ```bash
 ndlogs   # check /tmp/container-nd-dev-boot.err
@@ -345,14 +351,14 @@ launchctl bootout gui/$(id -u)/com.user.container.nd-dev
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.container.nd-dev.plist
 ```
 
-**`ansible-test --docker default` fails with "dbus" or "user session" errors**
+### `ansible-test --docker default` fails with "dbus" or "user session" errors
 
 ```bash
 # Re-enable user lingering inside the machine
 ndm sudo loginctl enable-linger $(whoami)
 ```
 
-**`ansible-test --docker default` fails with "insufficient UIDs/GIDs"**
+### `ansible-test --docker default` fails with "insufficient UIDs/GIDs"
 
 ```bash
 # Check subuid/subgid inside the machine
@@ -363,13 +369,13 @@ ndm sudo sed -i "s/^ubuntu:/$(whoami):/" /etc/subuid /etc/subgid
 ndm podman system migrate
 ```
 
-**`/dev/net/tun: Permission denied`**
+### `/dev/net/tun: Permission denied`
 
 ```bash
 ndm sudo chmod 0666 /dev/net/tun
 ```
 
-**Unit tests pass locally but behave differently from CI (pydantic compat shim)**
+### Unit tests pass locally but behave differently from CI (pydantic compat shim)
 
 If `pydantic` is missing from the `pytest` pipx venv, the collection falls back
 to its compat shim — `model_post_init` never fires and the orchestrator tests
@@ -397,7 +403,7 @@ ndm pipx inject pylint 'pydantic>=2.11,<2.12'
 ndm pipx inject mypy   'pydantic>=2.11,<2.12'
 ```
 
-**`uv sync` fails with Python version conflicts**
+### `uv sync` fails with Python version conflicts
 
 Ensure `requires-python` in `pyproject.toml` is `>=3.11` (not `>=3.10`)
 and the dependency is `ansible-core>=2.18,<2.19` (not the `ansible`
