@@ -197,13 +197,25 @@ two shell types:
 so it never sources `/etc/profile`.)
 
 If you want editor/LSP support on **macOS** (Pylance, ansible-lint in VS Code),
-create the host counterpart and point your editor at it explicitly — do not
-symlink `.venv`, or the machine would follow it and get the macOS binaries:
+you need the host counterpart of the venv, populated with the collection's
+deps so imports resolve in the editor — do not symlink `.venv`, or the machine
+would follow it and get the macOS binaries.
+
+`setup.sh` **STEP 8** provisions this for you automatically: it creates
+`.venv-Darwin-arm64` (if missing) and runs `uv sync` against `pyproject.toml`
++ `uv.lock` to install the full locked dev set (ansible-core, pydantic,
+requests-toolbelt, jsonpath-ng, lxml, …). This is editor IntelliSense only —
+it does not change the rule that tests/lint/type-checks run inside `nd-dev`.
+
+To do it (or redo it) by hand, from the collection root on macOS:
 
 ```bash
-# On macOS, from the collection root:
-uv venv --python 3.12 ".venv-$(uname -s)-$(uname -m)" --prompt ansible-nd   # .venv-Darwin-arm64
+VENV=".venv-$(uname -s)-$(uname -m)"          # .venv-Darwin-arm64
+uv venv --python 3.12 "$VENV" --prompt ansible-nd
+UV_PROJECT_ENVIRONMENT="$VENV" uv sync
 ```
+
+Then point your editor at it explicitly (one-time per checkout):
 
 ```jsonc
 // .vscode/settings.json
