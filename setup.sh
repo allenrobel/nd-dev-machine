@@ -42,7 +42,7 @@ note "and Claude Code. Expect 3-6 minutes on first run; cached layers are fast."
 note "Build context: ${SCRIPT_DIR}"
 
 step "Building local/nd-dev:latest..."
-container build -t local/nd-dev:latest "${SCRIPT_DIR}"
+container build --pull -t local/nd-dev:latest "${SCRIPT_DIR}"
 ok "Image built: local/nd-dev:latest"
 
 # ─────────────────────────────────────────────────────────────────────────────
