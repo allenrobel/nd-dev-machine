@@ -120,4 +120,4 @@ ndlogs                                  # check LaunchAgent boot logs
 - File paths are the same on macOS and inside the machine — use `$(pwd)`
   to preserve the caller's working directory.
 - Do not install Python packages on macOS for this collection; install
-  inside the machine using `ndm pip3 install --user <pkg>`.
+  inside the machine using `ndm pip3 install --user <pkg>`
