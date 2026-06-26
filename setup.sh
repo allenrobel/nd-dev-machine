@@ -264,6 +264,64 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+header "STEP 9 — Ignore machine-generated ansible artifacts (global git ignore)"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Running the in-machine tooling against the collection leaves two regenerable
+# trees at the collection root:
+#   collections/  — pytest-ansible's collection symlink farm (ndpytest creates it
+#                   unless run with --ansible-unit-inject-only, which the wrapper
+#                   now does).
+#   .ansible/     — ansible-lint's galaxy/cache tree. ansible-lint hardcodes
+#                   Runtime(isolated=True), so it ALWAYS writes <project>/.ansible
+#                   regardless of ANSIBLE_HOME — no wrapper/env knob relocates it.
+# Both are untracked and would otherwise block `git rebase` (the "move aside the
+# untracked collections/ symlink loop" dance). We ignore them via the developer's
+# *global* git ignore so each repo's own tracked .gitignore can stay aligned with
+# the team's. The patterns only affect *untracked* dirs of these names — a repo
+# that tracks a collections/ dir is unaffected.
+
+if ! command -v git > /dev/null 2>&1; then
+    warn "git not found on macOS PATH — skipping global git ignore setup."
+    warn "Add '.ansible/' and 'collections/' to your global git ignore manually."
+else
+    # Respect an existing core.excludesfile; otherwise use git's XDG default.
+    GLOBAL_IGNORE="$(git config --global --get core.excludesfile 2>/dev/null || true)"
+    if [ -n "${GLOBAL_IGNORE}" ]; then
+        GLOBAL_IGNORE="${GLOBAL_IGNORE/#\~/$HOME}"           # expand leading ~
+    else
+        GLOBAL_IGNORE="${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore"
+    fi
+
+    step "Ensuring entries in ${GLOBAL_IGNORE}..."
+    mkdir -p "$(dirname "${GLOBAL_IGNORE}")"
+    touch "${GLOBAL_IGNORE}"
+
+    # One-time explanatory header (sentinel-guarded so re-runs don't duplicate it).
+    if ! grep -qF "nd-dev: machine-generated ansible artifacts" "${GLOBAL_IGNORE}"; then
+        {
+            echo ""
+            echo "# nd-dev: machine-generated ansible artifacts (regenerable; never source)."
+            echo "# ansible-lint writes .ansible/ and pytest-ansible writes collections/ into"
+            echo "# the collection root. Ignored globally so each repo's tracked .gitignore can"
+            echo "# match the team's. Only affects *untracked* dirs of these names."
+        } >> "${GLOBAL_IGNORE}"
+    fi
+
+    add_ignore() {
+        local pat="$1"
+        if grep -qxF "${pat}" "${GLOBAL_IGNORE}"; then
+            note "Already present: ${pat}"
+        else
+            printf '%s\n' "${pat}" >> "${GLOBAL_IGNORE}"
+            ok "Added: ${pat}"
+        fi
+    }
+    add_ignore ".ansible/"
+    add_ignore "collections/"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 header "ALL DONE"
 # ─────────────────────────────────────────────────────────────────────────────
 
