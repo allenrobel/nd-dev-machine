@@ -75,12 +75,39 @@ bash setup.sh
 6. Wire shell aliases into `~/.zshrc` / `~/.bashrc`
 7. Install `CLAUDE.md` into the ND collection root (skipped if `CLAUDE.md` already exists in the ND collection root)
 8. Provision the macOS editor venv (`.venv-Darwin-arm64`) with the collection's deps via `uv sync`, so VS Code / Pylance resolves third-party imports (editor IntelliSense only — see [pyproject.toml configuration](#pyprojecttoml-configuration))
+9. Add `.ansible/` and `collections/` to your global git ignore (see [Git: ignoring machine-generated artifacts](#git-ignoring-machine-generated-artifacts))
 
 After setup, reload your shell:
 
 ```bash
 source ~/.zshrc
 ```
+
+### Git: ignoring machine-generated artifacts
+
+Running the in-machine tooling against the collection leaves two regenerable
+trees at the collection root, both untracked and **not** in the collection's
+tracked `.gitignore`:
+
+- **`collections/`** — pytest-ansible's collection symlink farm, created by
+  `ndpytest` (the wrapper now passes `--ansible-unit-inject-only`, which avoids
+  it; the ignore entry is a safety net).
+- **`.ansible/`** — ansible-lint's galaxy/cache tree. ansible-lint hardcodes
+  `Runtime(isolated=True)`, so it always writes `<project>/.ansible` regardless
+  of `ANSIBLE_HOME` — there is no wrapper/env knob to relocate it.
+
+Left un-ignored these block `git rebase` (the "move aside the untracked
+`collections/` symlink loop" dance). STEP 9 of `setup.sh` adds both to your
+**global** git ignore (`core.excludesfile`, or git's XDG default
+`~/.config/git/ignore`) — idempotently, so re-runs are safe. This keeps each
+collection's own tracked `.gitignore` aligned with the team's. To do it by hand:
+
+```bash
+printf '%s\n' '.ansible/' 'collections/' >> ~/.config/git/ignore
+```
+
+These patterns only ignore *untracked* dirs of those names; a repo that tracks a
+`collections/` dir is unaffected.
 
 ## Daily usage
 
