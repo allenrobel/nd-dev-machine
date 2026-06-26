@@ -264,26 +264,29 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-header "STEP 9 — Ignore machine-generated ansible artifacts (global git ignore)"
+header "STEP 9 — Ignore machine-generated dev artifacts (global git ignore)"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Running the in-machine tooling against the collection leaves two regenerable
-# trees at the collection root:
-#   collections/  — pytest-ansible's collection symlink farm (ndpytest creates it
-#                   unless run with --ansible-unit-inject-only, which the wrapper
-#                   now does).
-#   .ansible/     — ansible-lint's galaxy/cache tree. ansible-lint hardcodes
-#                   Runtime(isolated=True), so it ALWAYS writes <project>/.ansible
-#                   regardless of ANSIBLE_HOME — no wrapper/env knob relocates it.
-# Both are untracked and would otherwise block `git rebase` (the "move aside the
-# untracked collections/ symlink loop" dance). We ignore them via the developer's
+# Working the collection on this machine leaves a few regenerable, per-developer
+# trees that are deliberately NOT in the team's tracked .gitignore:
+#   collections/      — pytest-ansible's collection symlink farm (ndpytest creates
+#                       it unless run with --ansible-unit-inject-only, which the
+#                       wrapper now does).
+#   .ansible/         — ansible-lint's galaxy/cache tree. ansible-lint hardcodes
+#                       Runtime(isolated=True), so it ALWAYS writes
+#                       <project>/.ansible regardless of ANSIBLE_HOME.
+#   .venv / .venv-*/  — per-platform uv venvs (suffixed by `uname` so the macOS
+#                       host and the Linux machine never collide on the shared
+#                       virtiofs tree).
+# Left un-ignored, collections/ and .ansible/ block `git rebase` (the "move aside
+# the untracked symlink loop" dance). We ignore all of them via the developer's
 # *global* git ignore so each repo's own tracked .gitignore can stay aligned with
-# the team's. The patterns only affect *untracked* dirs of these names — a repo
-# that tracks a collections/ dir is unaffected.
+# the team's. Directory patterns only affect *untracked* dirs of those names — a
+# repo that tracks one is unaffected.
 
 if ! command -v git > /dev/null 2>&1; then
     warn "git not found on macOS PATH — skipping global git ignore setup."
-    warn "Add '.ansible/' and 'collections/' to your global git ignore manually."
+    warn "Add '.ansible/', 'collections/', '.venv', '.venv-*/' to your global git ignore manually."
 else
     # Respect an existing core.excludesfile; otherwise use git's XDG default.
     GLOBAL_IGNORE="$(git config --global --get core.excludesfile 2>/dev/null || true)"
@@ -319,6 +322,19 @@ else
     }
     add_ignore ".ansible/"
     add_ignore "collections/"
+
+    # Per-platform uv venvs — separate sentinel so existing installs pick these
+    # up on re-run without duplicating the comment above.
+    if ! grep -qF "nd-dev: per-platform uv venvs" "${GLOBAL_IGNORE}"; then
+        {
+            echo ""
+            echo "# nd-dev: per-platform uv venvs (.venv-<os>-<arch>; shared host/machine tree"
+            echo "# via virtiofs, per-developer). Ignored globally so the collection's tracked"
+            echo "# .gitignore can match the team's."
+        } >> "${GLOBAL_IGNORE}"
+    fi
+    add_ignore ".venv"
+    add_ignore ".venv-*/"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
