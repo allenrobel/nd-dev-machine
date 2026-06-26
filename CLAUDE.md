@@ -43,6 +43,11 @@ To match CI exactly (full Docker container, slower), use `ndtest-docker`
 
 ## Linting and Type Checking
 
+`ndlint` passes `--offline` automatically: the nd-dev sandbox has no network,
+so ansible-lint's Galaxy pre-flight would otherwise fail and let it exit 0
+*without running the rules*. Deps are already provisioned via uv.lock/pipx, so
+offline never loses anything here — no need to add `--offline` by hand.
+
 ```bash
 # ansible-lint
 ndlint plugins/
