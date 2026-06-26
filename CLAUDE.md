@@ -58,6 +58,14 @@ ndmypy plugins/modules/
 Run the collection's pytest unit tests inside the machine with `ndpytest`
 (e.g. `ndpytest tests/unit/...`).
 
+`ndpytest` runs pytest-ansible with `--ansible-unit-inject-only` (and
+`ANSIBLE_COLLECTIONS_PATH` set to the collections root) so it does **not** write
+a `collections/` symlink farm into the collection root — keep that flag. Both
+`collections/` and ansible-lint's `.ansible/` are regenerable and globally
+git-ignored (`setup.sh` STEP 9 → `~/.config/git/ignore`), so they never need
+moving aside before a rebase. ansible-lint hardcodes `Runtime(isolated=True)`,
+so its `.ansible/` cannot be relocated via `ANSIBLE_HOME`.
+
 The `pytest`, `pylint`, and `mypy` tools live in **isolated pipx venvs**, each
 with `pydantic` injected and capped to `pydantic>=2.11,<2.12` (matches the
 collection pin / issue #344). Do NOT rely on a system/user pydantic — it is not
