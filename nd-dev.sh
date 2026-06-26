@@ -125,8 +125,30 @@ function ndpylint {
 
 # Run pytest inside the machine (self-heals pytest's pydantic first — without
 # it, the collection silently falls back to the pydantic compat shim).
+#
+# Runs pytest-ansible in "inject-only" mode (--ansible-unit-inject-only). By
+# default pytest-ansible sees galaxy.yml at the collection root and, because the
+# repo lives at `…/ansible_collections/cisco/nd` (parent is `ansible_collections`,
+# not `collections`), manufactures a `collections/ansible_collections/cisco/nd`
+# symlink farm in the repo to make `import ansible_collections.cisco.nd` resolve.
+# That farm is untracked, not git-ignored, and symlinks every top-level entry
+# (incl. .git/.venv-*), so it shows up as a "symlink loop" that has to be moved
+# aside before every rebase. Inject-only skips the farm and instead trusts an
+# existing ANSIBLE_COLLECTIONS_PATH — and since the repo already sits under a
+# valid collections root, we just point it at the grandparent of
+# `ansible_collections/` (e.g. /Users/<you>). ANSIBLE_HOME is redirected to a
+# machine-local scratch dir so the galaxy/cache `.ansible` tree stays out of the
+# repo too. Verified: full unit suite (1570 tests) passes identically with zero
+# artifacts written to the collection.
 function ndpytest {
-    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run pytest "$@"
+    local cwd acp
+    cwd="$(pwd)"
+    acp="${cwd%/ansible_collections/*}"        # grandparent of ansible_collections/
+    [ "$acp" = "$cwd" ] && acp="$_NDM_HOME"    # fallback if not inside such a tree
+    _ndm_run "$cwd" env \
+        "ANSIBLE_COLLECTIONS_PATH=$acp" \
+        "ANSIBLE_HOME=/tmp/nd-ansible-home" \
+        "$_NDM_REPO/nddoctor.sh" run pytest --ansible-unit-inject-only "$@"
 }
 
 # Show nd-dev machine status
