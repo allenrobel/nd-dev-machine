@@ -16,7 +16,7 @@ outside the machine — no path translation needed.
 ## Running Tests
 
 All `ansible-test` invocations must run inside the nd-dev machine.
-Use `ndtest` (defined in `~/nd-dev-machine/aliases/nd-dev.sh`) or the
+Use `ndtest` (defined in `~/nd-dev-machine/nd-dev.sh`) or the
 explicit form:
 
 ```bash
@@ -35,6 +35,9 @@ container machine run -n nd-dev -- bash -lc \
 ```
 
 `ANSIBLE_TEST_PREFER_PODMAN=1` is set system-wide inside the machine.
+
+To match CI exactly (full Docker container, slower), use `ndtest-docker`
+(e.g. `ndtest-docker --test validate-modules`) — worth doing before a PR.
 
 ---
 
@@ -125,7 +128,7 @@ UV_PROJECT_ENVIRONMENT="$VENV" uv sync
 ## Machine Management
 
 ```bash
-container machine ls                    # check status
+container machine ls                    # check status  (alias: ndstatus)
 container machine stop nd-dev          # stop
 container machine run -n nd-dev        # start / interactive shell
 ndlogs                                  # check LaunchAgent boot logs
