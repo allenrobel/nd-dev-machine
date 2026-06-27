@@ -100,9 +100,12 @@ function ndtest-docker {
     _ndm_run "$(pwd)" ansible-test sanity --docker default "$@"
 }
 
-# Run ansible-lint inside the machine
+# Run ansible-lint inside the machine.
+# --offline skips ansible-lint's Galaxy pre-flight: the nd-dev sandbox has no
+# network, and deps are already provisioned via uv.lock/pipx — without it the
+# pre-flight fails and ansible-lint can exit 0 without running the rules.
 function ndlint {
-    _ndm_run "$(pwd)" ansible-lint "$@"
+    _ndm_run "$(pwd)" ansible-lint --offline "$@"
 }
 
 # Verify/self-heal the pipx tool venvs (capped pydantic in pytest/pylint/mypy).
