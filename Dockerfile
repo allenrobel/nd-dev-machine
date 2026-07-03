@@ -49,12 +49,22 @@ RUN >/etc/machine-id && \
 # --break-system-packages is required on Ubuntu 24.04 (PEP 668)
 RUN pip3 install --break-system-packages ansible-core
 
-# ── Claude Code (system-wide via npm) ─────────────────────────────────────────
+# ── Claude Code + markdownlint (system-wide via npm) ──────────────────────────
 # The native installer (claude.ai/install.sh) requires bash, but Dockerfile RUN
 # uses /bin/sh (dash on Ubuntu), causing a syntax error. npm install is
 # Anthropic's recommended approach for Dockerfiles and works in any POSIX shell.
 # Running as root here — no sudo needed, do NOT prefix with sudo.
-RUN npm install -g @anthropic-ai/claude-code
+#
+# markdownlint-cli is baked into the image (not first-boot.sh) because the
+# machine usually has no outbound network after creation — image build happens
+# on macOS where the registry is reachable. The collection's CLAUDE.md
+# documents `ndm markdownlint <file>.md`, which needs this binary on PATH.
+#
+# Pinned at 0.44.0: Ubuntu 24.04's apt nodejs is 18.x, and markdownlint-cli
+# >=0.45.0 requires Node >=20 (npm only WARNS on the engine mismatch, then the
+# tool can fail at runtime). Keep this pin in sync with MDL_PIN in nddoctor.sh;
+# bump both together if the image ever moves to a newer Node.
+RUN npm install -g @anthropic-ai/claude-code markdownlint-cli@0.44.0
 
 # ── First-boot user bootstrap ──────────────────────────────────────────────────
 # Called ONCE on first boot by the container machine runtime (as root), with

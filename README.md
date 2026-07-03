@@ -38,9 +38,9 @@ All files live flat in one directory (no subdirectories required):
 nd-dev-machine/
 ├── README.md                           ← you are here
 ├── setup.sh                            ← one-time setup script
-├── Dockerfile                          ← Ubuntu 24.04 + systemd + Podman + Claude Code
+├── Dockerfile                          ← Ubuntu 24.04 + systemd + Podman + Claude Code + markdownlint
 ├── first-boot.sh                       ← user provisioning, runs once on first machine boot
-├── nddoctor.sh                         ← verify/self-heal the pipx tool venvs (pinned pydantic)
+├── nddoctor.sh                         ← verify/self-heal the dev tools (pipx venvs, markdownlint)
 ├── nd-dev.sh                           ← shell aliases (ndm, ndtest, ndlint, nddoctor, …)
 ├── ndm-env.sh                          ← env shim used by nd-dev.sh (auto-created by setup.sh)
 ├── CLAUDE.md                           ← Claude Code instructions for the ND collection
@@ -135,8 +135,10 @@ ndtest-docker --test validate-modules
 ndlint plugins/
 ndmypy plugins/modules/
 ndpylint plugins/modules/nd_my_module.py
+ndm markdownlint README.md
 
-# Verify / self-heal the pipx tool venvs (pinned pydantic in pytest/pylint/mypy)
+# Verify / self-heal the dev tools (pinned pydantic in pytest/pylint/mypy,
+# markdownlint on PATH)
 nddoctor
 
 # Check machine status and LaunchAgent boot logs
@@ -337,6 +339,40 @@ machine:
 python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
   --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
 ```
+
+### Markdown linting (markdownlint via npm)
+
+The collection's CLAUDE.md documents `ndm markdownlint <file>.md`, so the
+`markdownlint` CLI (npm package `markdownlint-cli`) must exist **inside** the
+machine. The `Dockerfile` bakes it into the image alongside Claude Code —
+Node.js/npm are already there, and the image build runs on macOS where the
+npm registry is reachable (the machine itself usually has no outbound
+network, which is why this is *not* done in `first-boot.sh`).
+
+The package is **pinned at `markdownlint-cli@0.44.0`**: the image's apt
+`nodejs` is 18.x, and `markdownlint-cli >= 0.45.0` requires Node >= 20 (npm
+only warns on the engine mismatch, then the tool can fail at runtime). The
+pin lives in both the `Dockerfile` and `nddoctor.sh` (`MDL_PIN`) — bump both
+together if the image ever moves to a newer Node.
+
+A machine built from an older image won't have it. `nddoctor` checks for the
+binary and, when the npm registry is reachable, heals with `npm install -g`.
+It probes reachability first (quick `curl`) because on the offline machine a
+plain `npm install` burns many minutes of TCP retries before failing — and
+npm's cache can't bridge the gap either: package metadata cached by the macOS
+npm is not readable by the machine's older npm (`ENOTCACHED`).
+
+The offline fix is a macOS-side install into the virtiofs-shared home —
+`~/.local/bin` is first on the machine's PATH, and `markdownlint-cli` is pure
+JavaScript, so one install serves both platforms (the `#!/usr/bin/env node`
+shim resolves to each side's own Node):
+
+```bash
+npm install -g --prefix ~/.local markdownlint-cli@0.44.0
+```
+
+Or simply rebuild the image (see
+[Rebuilding the machine](#rebuilding-the-machine)).
 
 ### Auto-start at login
 
