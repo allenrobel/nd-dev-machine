@@ -36,8 +36,11 @@ container machine run -n nd-dev -- bash -lc \
 
 `ANSIBLE_TEST_PREFER_PODMAN=1` is set system-wide inside the machine.
 
-To match CI exactly (full Docker container, slower), use `ndtest-docker`
-(e.g. `ndtest-docker --test validate-modules`) — worth doing before a PR.
+To get close to CI (full Docker container with all Python interpreters,
+slower), use `ndtest-docker` (e.g. `ndtest-docker --test validate-modules`)
+— worth doing before a PR. Note it still runs the machine's single
+ansible-core version, not the CI matrix; see the README section
+"Local testing vs GitHub CI" for the remaining gaps.
 
 ---
 
