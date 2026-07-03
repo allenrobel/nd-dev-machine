@@ -43,10 +43,12 @@ To match CI exactly (full Docker container, slower), use `ndtest-docker`
 
 ## Linting and Type Checking
 
-`ndlint` passes `--offline` automatically: the nd-dev sandbox has no network,
-so ansible-lint's Galaxy pre-flight would otherwise fail and let it exit 0
-*without running the rules*. Deps are already provisioned via uv.lock/pipx, so
-offline never loses anything here — no need to add `--offline` by hand.
+`ndlint` passes `--offline` automatically: the machine normally has outbound
+network, but its vmnet NAT can silently go stale (see the README
+"Troubleshooting" section) — and when it does, ansible-lint's Galaxy
+pre-flight fails and lets it exit 0 *without running the rules*. Deps are
+already provisioned via uv.lock/pipx, so offline never loses anything here —
+no need to add `--offline` by hand.
 
 ```bash
 # ansible-lint
@@ -86,11 +88,12 @@ pydantic — it is not visible inside a pipx venv.
 The `ndpytest` / `ndmypy` / `ndpylint` wrappers self-heal their own venv on
 every run (via `nddoctor.sh run <tool>`), so a drifted/missing pydantic is
 re-injected automatically before the tool runs. To check/heal all three venvs
-on demand (e.g. after a rebuild), run `nddoctor`. Because the machine is
-usually offline, healing installs from the local wheelhouse
-`~/.cache/nd-wheelhouse` when it has wheels (populate it from macOS with
-`pip download`; see the README "Python CLI tooling" section), falling back
-to PyPI otherwise.
+on demand (e.g. after a rebuild), run `nddoctor`. Healing installs from the
+local wheelhouse `~/.cache/nd-wheelhouse` when it has wheels (populate it
+from macOS with `pip download`; see the README "Python CLI tooling"
+section), falling back to PyPI otherwise — the wheelhouse keeps healing
+working when the machine's NAT has silently gone stale (see the README
+"Troubleshooting" section).
 
 If unit tests behave oddly (e.g. `model_post_init` never fires, orchestrator
 tests passing — or failing — for the wrong reason), run `nddoctor` to confirm
@@ -146,6 +149,11 @@ container machine stop nd-dev          # stop
 container machine run -n nd-dev        # start / interactive shell
 ndlogs                                  # check LaunchAgent boot logs
 ```
+
+If network-dependent commands inside the machine hang (e.g. `ndtest` stuck
+at "Installing requirements"), the vmnet NAT has likely gone stale — see the
+README "Troubleshooting" section for the diagnosis and the container-system
+restart that fixes it.
 
 ---
 
