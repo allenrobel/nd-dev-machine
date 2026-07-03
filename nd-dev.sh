@@ -108,7 +108,7 @@ function ndlint {
     _ndm_run "$(pwd)" ansible-lint --offline "$@"
 }
 
-# Verify/self-heal the pipx tool venvs (capped pydantic in pytest/pylint/mypy).
+# Verify/self-heal the pipx tool venvs (pinned pydantic in pytest/pylint/mypy).
 # Run on demand, e.g. after a machine rebuild or if unit tests act up. The
 # ndmypy/ndpylint/ndpytest wrappers below also self-heal their own venv on each
 # invocation, so you rarely need to call this directly. See nddoctor.sh.

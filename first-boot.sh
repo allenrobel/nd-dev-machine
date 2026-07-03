@@ -166,11 +166,12 @@ echo "[create-user] Installing Python CLI tools via pipx..."
 # under the collection's pydantic compat shim (model_post_init never fires) and
 # the orchestrator tests pass for the wrong reason.
 #
-# Version is capped to match the collection's own pin in requirements.txt /
-# pyproject.toml (pydantic>=2.11,<2.12, issue #344): pydantic>=2.12 hard-errors
-# at class construction on NDBaseOrchestrator. Keeping the cap here ensures the
-# machine's local test env matches CI instead of pulling 2.12+ on rebuild.
-PYDANTIC_PIN='pydantic>=2.11,<2.12'
+# Version floor matches the collection's own pin in requirements.txt
+# (pydantic==2.12.5 on develop). The old <2.12 cap (issue #344: pydantic>=2.12
+# hard-errored at class construction on NDBaseOrchestrator) was dropped after
+# CiscoDevNet/ansible-nd#377 fixed the root cause. Keeping the floor here
+# ensures the machine's local test env matches CI on rebuild.
+PYDANTIC_PIN='pydantic>=2.12.5'
 #
 # Run pipx as the target user but with HOME explicitly set to CONTAINER_HOME
 # (the virtiofs-mounted macOS home). We cannot rely on 'su -' to set the
@@ -192,9 +193,9 @@ su - "${CONTAINER_USER}" -c "
     sudo apt install -y pipx
     export HOME=/Users/\$(whoami)
     pipx install ansible-lint
-    pipx install pylint && pipx inject pylint 'pydantic>=2.11,<2.12'
-    pipx install mypy   && pipx inject mypy   'pydantic>=2.11,<2.12'
-    pipx install pytest && pipx inject pytest pytest-ansible 'pydantic>=2.11,<2.12'"
+    pipx install pylint && pipx inject pylint 'pydantic>=2.12.5'
+    pipx install mypy   && pipx inject mypy   'pydantic>=2.12.5'
+    pipx install pytest && pipx inject pytest pytest-ansible 'pydantic>=2.12.5'"
 
 # ── Shell environment additions ────────────────────────────────────────────────
 MARKER="# --- nd-dev container machine ---"

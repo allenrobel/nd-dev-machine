@@ -1,10 +1,12 @@
 #!/bin/sh
 # nddoctor.sh — verify (and self-heal) the pipx tool venvs used for the
 # cisco/nd Ansible collection. Each of pytest / pylint / mypy must have
-# pydantic at 2.11.x (capped <2.12, issue #344). Without it, pytest silently
-# falls back to the collection's pydantic compat shim (model_post_init never
-# fires) and the orchestrator unit tests fail — or worse, pass — for the wrong
-# reason. See README.md "Python CLI tooling (pipx + capped pydantic)".
+# pydantic >= 2.12.5 (matches the collection's requirements.txt pin; the old
+# <2.12 cap for issue #344 was dropped after CiscoDevNet/ansible-nd#377).
+# Without it, pytest silently falls back to the collection's pydantic compat
+# shim (model_post_init never fires) and the orchestrator unit tests fail — or
+# worse, pass — for the wrong reason. See README.md "Python CLI tooling
+# (pipx + pinned pydantic)".
 #
 # Runs INSIDE the nd-dev machine; pipx venvs live under
 # $HOME/.local/share/pipx/venvs. Invoked via the `nddoctor`, `ndpytest`,
@@ -16,7 +18,8 @@
 #
 set -u
 
-PIN='pydantic>=2.11,<2.12'
+PIN='pydantic>=2.12.5'
+FLOOR='2.12.5'
 VENVS="${HOME}/.local/share/pipx/venvs"
 QUIET=0   # set to 1 in `run` mode: only speak when an action is taken
 
@@ -28,8 +31,19 @@ pydantic_version() {
     "${VENVS}/$1/bin/python" -c 'import pydantic; print(pydantic.VERSION)' 2>/dev/null
 }
 
-# Ensure venv $1 has a capped pydantic; re-inject if missing or out of range.
-# Returns 0 if healthy/healed, 1 if it could not be fixed.
+# Return 0 if venv $1's pydantic satisfies the >= FLOOR requirement.
+pydantic_in_range() {
+    "${VENVS}/$1/bin/python" -c '
+import re, sys
+import pydantic
+ver = tuple(int(x) for x in re.findall(r"\d+", pydantic.VERSION)[:3])
+floor = tuple(int(x) for x in sys.argv[1].split("."))
+sys.exit(0 if ver >= floor else 1)
+' "$FLOOR" 2>/dev/null
+}
+
+# Ensure venv $1 has pydantic at or above the floor; (re-)inject if missing
+# or too old. Returns 0 if healthy/healed, 1 if it could not be fixed.
 ensure_pydantic() {
     venv="$1"
     if [ ! -x "${VENVS}/${venv}/bin/python" ]; then
@@ -37,15 +51,15 @@ ensure_pydantic() {
         return 1
     fi
     ver="$(pydantic_version "$venv")"
-    case "$ver" in
-        2.11.*)
-            note "${venv}: pydantic ${ver} OK"
-            return 0 ;;
-        '')
-            warn "${venv}: pydantic MISSING -> injecting ${PIN}" ;;
-        *)
-            warn "${venv}: pydantic ${ver} out of range -> re-injecting ${PIN}" ;;
-    esac
+    if [ -n "$ver" ] && pydantic_in_range "$venv"; then
+        note "${venv}: pydantic ${ver} OK"
+        return 0
+    fi
+    if [ -z "$ver" ]; then
+        warn "${venv}: pydantic MISSING -> injecting ${PIN}"
+    else
+        warn "${venv}: pydantic ${ver} out of range -> re-injecting ${PIN}"
+    fi
     if pipx inject "$venv" "$PIN" >/dev/null 2>&1; then
         warn "${venv}: pydantic $(pydantic_version "$venv") (healed)"
         return 0
@@ -94,7 +108,7 @@ for v in pytest pylint mypy; do
     heal "$v" || rc=1
 done
 if [ "$rc" -eq 0 ]; then
-    note "all tool venvs healthy (pydantic 2.11.x)"
+    note "all tool venvs healthy (pydantic >= ${FLOOR})"
 else
     warn "one or more venvs need attention (see above)"
 fi

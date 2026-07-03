@@ -40,7 +40,7 @@ nd-dev-machine/
 ├── setup.sh                            ← one-time setup script
 ├── Dockerfile                          ← Ubuntu 24.04 + systemd + Podman + Claude Code
 ├── first-boot.sh                       ← user provisioning, runs once on first machine boot
-├── nddoctor.sh                         ← verify/self-heal the pipx tool venvs (capped pydantic)
+├── nddoctor.sh                         ← verify/self-heal the pipx tool venvs (pinned pydantic)
 ├── nd-dev.sh                           ← shell aliases (ndm, ndtest, ndlint, nddoctor, …)
 ├── ndm-env.sh                          ← env shim used by nd-dev.sh (auto-created by setup.sh)
 ├── CLAUDE.md                           ← Claude Code instructions for the ND collection
@@ -136,7 +136,7 @@ ndlint plugins/
 ndmypy plugins/modules/
 ndpylint plugins/modules/nd_my_module.py
 
-# Verify / self-heal the pipx tool venvs (capped pydantic in pytest/pylint/mypy)
+# Verify / self-heal the pipx tool venvs (pinned pydantic in pytest/pylint/mypy)
 nddoctor
 
 # Check machine status and LaunchAgent boot logs
@@ -286,7 +286,7 @@ and `slirp4netns` need to open it for rootless networking. `first-boot.sh`
 sets it to `0666` and writes a udev rule to make this persistent across
 container restarts.
 
-### Python CLI tooling (pipx + capped pydantic)
+### Python CLI tooling (pipx + pinned pydantic)
 
 The per-user dev tools — `ansible-lint`, `pylint`, `mypy`, and `pytest` — are
 installed by `first-boot.sh` via **pipx**, each in its own isolated venv under
@@ -300,14 +300,16 @@ the collection's models needs `pydantic` injected explicitly:
 | `pylint` | imports the models during static analysis |
 | `mypy` | uses the `pydantic.mypy` plugin and imports the models |
 
-All three injects are **capped to `pydantic>=2.11,<2.12`** to match the
-collection's own pin in `requirements.txt` / `pyproject.toml` (issue #344):
-`pydantic>=2.12` hard-errors at class construction on `NDBaseOrchestrator`.
+All three injects are **floored at `pydantic>=2.12.5`** to match the
+collection's own pin in `requirements.txt` (`pydantic==2.12.5` on develop).
+The old `<2.12` cap (issue #344: `pydantic>=2.12` hard-errored at class
+construction on `NDBaseOrchestrator`) was dropped after
+CiscoDevNet/ansible-nd#377 fixed the root cause.
 
 This matters for `pytest` in particular: with **no** pydantic in its venv, the
 collection silently falls back to its pydantic compat shim (where
 `model_post_init` never fires) and the orchestrator tests pass for the wrong
-reason. The cap keeps the machine's local test env matching CI on every rebuild.
+reason. The pin keeps the machine's local test env matching CI on every rebuild.
 
 **Self-healing.** `first-boot.sh` injects these once at first boot, so any later
 drift (a failed inject, a partial manual recovery, a rebuild) could silently
@@ -423,7 +425,7 @@ ndm sudo chmod 0666 /dev/net/tun
 If `pydantic` is missing from the `pytest` pipx venv, the collection falls back
 to its compat shim — `model_post_init` never fires and the orchestrator tests
 pass (or fail) for the wrong reason. The one-command fix is `nddoctor`, which
-checks every venv and re-injects the capped pydantic where it is missing or
+checks every venv and re-injects the pinned pydantic where it is missing or
 out of range:
 
 ```bash
@@ -435,15 +437,15 @@ you usually hit this only after a manual `pipx` operation. Manual fallback if yo
 ever need it (this is exactly what `nddoctor` and `first-boot.sh` do):
 
 ```bash
-# Check the version inside each venv (should be 2.11.x, never >=2.12)
+# Check the version inside each venv (should be >= 2.12.5)
 for v in pytest pylint mypy; do
   echo -n "$v: "; ndm ~/.local/share/pipx/venvs/$v/bin/python -c 'import pydantic; print(pydantic.VERSION)'
 done
 
-# Restore / re-cap if missing or >=2.12
-ndm pipx inject pytest 'pydantic>=2.11,<2.12'
-ndm pipx inject pylint 'pydantic>=2.11,<2.12'
-ndm pipx inject mypy   'pydantic>=2.11,<2.12'
+# Restore / upgrade if missing or < 2.12.5
+ndm pipx inject pytest 'pydantic>=2.12.5'
+ndm pipx inject pylint 'pydantic>=2.12.5'
+ndm pipx inject mypy   'pydantic>=2.12.5'
 ```
 
 ### `uv sync` fails with Python version conflicts

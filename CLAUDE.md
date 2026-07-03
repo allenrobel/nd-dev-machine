@@ -75,9 +75,10 @@ moving aside before a rebase. ansible-lint hardcodes `Runtime(isolated=True)`,
 so its `.ansible/` cannot be relocated via `ANSIBLE_HOME`.
 
 The `pytest`, `pylint`, and `mypy` tools live in **isolated pipx venvs**, each
-with `pydantic` injected and capped to `pydantic>=2.11,<2.12` (matches the
-collection pin / issue #344). Do NOT rely on a system/user pydantic — it is not
-visible inside a pipx venv.
+with `pydantic` injected and floored at `pydantic>=2.12.5` (matches the
+collection's `requirements.txt` pin; the old `<2.12` cap for issue #344 was
+dropped after CiscoDevNet/ansible-nd#377). Do NOT rely on a system/user
+pydantic — it is not visible inside a pipx venv.
 
 The `ndpytest` / `ndmypy` / `ndpylint` wrappers self-heal their own venv on
 every run (via `nddoctor.sh run <tool>`), so a drifted/missing pydantic is
@@ -89,7 +90,7 @@ tests passing — or failing — for the wrong reason), run `nddoctor` to confir
 the venvs are healthy. Manual fallback:
 
 ```bash
-ndm pipx inject pytest 'pydantic>=2.11,<2.12'
+ndm pipx inject pytest 'pydantic>=2.12.5'
 ```
 
 This is provisioned by `first-boot.sh` and kept healthy by `nddoctor.sh`; see
