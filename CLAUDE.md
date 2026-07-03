@@ -83,7 +83,11 @@ pydantic — it is not visible inside a pipx venv.
 The `ndpytest` / `ndmypy` / `ndpylint` wrappers self-heal their own venv on
 every run (via `nddoctor.sh run <tool>`), so a drifted/missing pydantic is
 re-injected automatically before the tool runs. To check/heal all three venvs
-on demand (e.g. after a rebuild), run `nddoctor`.
+on demand (e.g. after a rebuild), run `nddoctor`. Because the machine is
+usually offline, healing installs from the local wheelhouse
+`~/.cache/nd-wheelhouse` when it has wheels (populate it from macOS with
+`pip download`; see the README "Python CLI tooling" section), falling back
+to PyPI otherwise.
 
 If unit tests behave oddly (e.g. `model_post_init` never fires, orchestrator
 tests passing — or failing — for the wrong reason), run `nddoctor` to confirm

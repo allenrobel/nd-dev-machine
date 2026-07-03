@@ -325,6 +325,19 @@ when already healthy) before running the tool. In normal use you never need to
 run `nddoctor` by hand — it's there for an explicit check after a rebuild or when
 something looks off.
 
+**Offline machines.** The machine usually has no outbound network (the same
+reason `ndlint` passes `--offline`), so a plain `pipx inject` cannot reach
+PyPI. `nddoctor` therefore heals from a **local wheelhouse** at
+`~/.cache/nd-wheelhouse` (override with `ND_WHEELHOUSE`) whenever it contains
+wheels, falling back to PyPI otherwise. Populate it from macOS — the home
+directory is shared via virtiofs, so the same path is visible inside the
+machine:
+
+```bash
+python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
+  --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
+```
+
 ### Auto-start at login
 
 Two LaunchAgents handle startup sequencing:
@@ -446,6 +459,16 @@ done
 ndm pipx inject pytest 'pydantic>=2.12.5'
 ndm pipx inject pylint 'pydantic>=2.12.5'
 ndm pipx inject mypy   'pydantic>=2.12.5'
+```
+
+If the machine is offline (the usual case), the plain injects above fail —
+populate the wheelhouse from macOS first and let `nddoctor` do the offline
+install:
+
+```bash
+python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
+  --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
+nddoctor
 ```
 
 ### `uv sync` fails with Python version conflicts

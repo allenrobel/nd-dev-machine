@@ -21,6 +21,13 @@ set -u
 PIN='pydantic>=2.12.5'
 FLOOR='2.12.5'
 VENVS="${HOME}/.local/share/pipx/venvs"
+# Optional local wheelhouse for offline machines (the nd-dev machine usually
+# has no outbound network, so a plain `pipx inject` cannot reach PyPI).
+# Populate it from macOS — the home directory is shared via virtiofs, so the
+# same path is visible inside the machine:
+#   python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
+#     --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
+WHEELHOUSE="${ND_WHEELHOUSE:-${HOME}/.cache/nd-wheelhouse}"
 QUIET=0   # set to 1 in `run` mode: only speak when an action is taken
 
 note() { [ "$QUIET" -eq 1 ] || echo "[nddoctor] $*" >&2; }
@@ -42,6 +49,22 @@ sys.exit(0 if ver >= floor else 1)
 ' "$FLOOR" 2>/dev/null
 }
 
+# Inject $PIN into venv $1. When the wheelhouse has wheels, try it first: on
+# the offline machine a PyPI attempt burns minutes of pip retries before
+# failing, while the wheelhouse succeeds (or fails) instantly. Fall back to a
+# normal PyPI inject either way, so an online machine still heals when the
+# wheelhouse is stale.
+inject_pydantic() {
+    venv="$1"
+    if [ -n "$(ls "${WHEELHOUSE}"/*.whl 2>/dev/null)" ]; then
+        pipx inject "$venv" "$PIN" \
+            --pip-args="--no-index --find-links=${WHEELHOUSE}" \
+            >/dev/null 2>&1 && return 0
+        warn "${venv}: wheelhouse inject failed (${WHEELHOUSE}) -> trying PyPI"
+    fi
+    pipx inject "$venv" "$PIN" >/dev/null 2>&1
+}
+
 # Ensure venv $1 has pydantic at or above the floor; (re-)inject if missing
 # or too old. Returns 0 if healthy/healed, 1 if it could not be fixed.
 ensure_pydantic() {
@@ -60,11 +83,13 @@ ensure_pydantic() {
     else
         warn "${venv}: pydantic ${ver} out of range -> re-injecting ${PIN}"
     fi
-    if pipx inject "$venv" "$PIN" >/dev/null 2>&1; then
+    if inject_pydantic "$venv"; then
         warn "${venv}: pydantic $(pydantic_version "$venv") (healed)"
         return 0
     fi
-    warn "${venv}: ERROR pipx inject failed — fix manually: pipx inject ${venv} '${PIN}'"
+    warn "${venv}: ERROR inject failed — offline? Populate the wheelhouse from macOS:"
+    warn "  python3 -m pip download '${PIN}' --platform manylinux_2_17_aarch64 --python-version 3.12 --only-binary=:all: -d '${WHEELHOUSE}'"
+    warn "  then re-run nddoctor (or: pipx inject ${venv} '${PIN}')"
     return 1
 }
 
