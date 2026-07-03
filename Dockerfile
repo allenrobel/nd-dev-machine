@@ -56,9 +56,10 @@ RUN pip3 install --break-system-packages ansible-core
 # Running as root here — no sudo needed, do NOT prefix with sudo.
 #
 # markdownlint-cli is baked into the image (not first-boot.sh) because the
-# machine usually has no outbound network after creation — image build happens
-# on macOS where the registry is reachable. The collection's CLAUDE.md
-# documents `ndm markdownlint <file>.md`, which needs this binary on PATH.
+# machine's outbound network can silently go stale (see README
+# "Troubleshooting") — the image build happens on macOS where the registry
+# is reachable. The collection's CLAUDE.md documents
+# `ndm markdownlint <file>.md`, which needs this binary on PATH.
 #
 # Pinned at 0.44.0: Ubuntu 24.04's apt nodejs is 18.x, and markdownlint-cli
 # >=0.45.0 requires Node >=20 (npm only WARNS on the engine mismatch, then the

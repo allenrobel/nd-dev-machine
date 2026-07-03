@@ -26,10 +26,11 @@ set -u
 PIN='pydantic>=2.12.5'
 FLOOR='2.12.5'
 VENVS="${HOME}/.local/share/pipx/venvs"
-# Optional local wheelhouse for offline machines (the nd-dev machine usually
-# has no outbound network, so a plain `pipx inject` cannot reach PyPI).
-# Populate it from macOS — the home directory is shared via virtiofs, so the
-# same path is visible inside the machine:
+# Optional local wheelhouse for when the machine is offline. The machine
+# normally has outbound network via the vmnet NAT, but that NAT can silently
+# go stale (see README "Troubleshooting"), leaving `pipx inject` unable to
+# reach PyPI. Populate it from macOS — the home directory is shared via
+# virtiofs, so the same path is visible inside the machine:
 #   python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
 #     --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
 WHEELHOUSE="${ND_WHEELHOUSE:-${HOME}/.cache/nd-wheelhouse}"
@@ -98,19 +99,21 @@ ensure_pydantic() {
     warn "${venv}: ERROR inject failed — offline? Populate the wheelhouse from macOS:"
     warn "  python3 -m pip download '${PIN}' --platform manylinux_2_17_aarch64 --python-version 3.12 --only-binary=:all: -d '${WHEELHOUSE}'"
     warn "  then re-run nddoctor (or: pipx inject ${venv} '${PIN}')"
+    warn "  if the machine should be online, the vmnet NAT may be stale — see README Troubleshooting"
     return 1
 }
 
 # Ensure the markdownlint CLI (npm package markdownlint-cli) is on PATH.
 # The Dockerfile bakes it into the image; a machine built from an older image
 # won't have it. An npm install is only attempted when the registry is
-# reachable (quick curl probe first): on the offline machine a plain
-# `npm install` burns many minutes of TCP retries before failing, and npm's
-# cache can't bridge the gap either — packuments cached by macOS npm are not
-# readable by the machine's older npm (ENOTCACHED). The offline fix is to
-# install from macOS into the virtiofs-shared home (~/.local/bin is first on
-# the machine's PATH, and markdownlint-cli is pure JS so one install serves
-# both platforms):
+# reachable (quick curl probe first): with the network down (stale vmnet
+# NAT — see README "Troubleshooting") a plain `npm install` burns many
+# minutes of TCP retries before failing, and npm's cache can't bridge the
+# gap either — packuments cached by macOS npm are not readable by the
+# machine's older npm (ENOTCACHED). The offline fix is to install from macOS
+# into the virtiofs-shared home (~/.local/bin is first on the machine's
+# PATH, and markdownlint-cli is pure JS so one install serves both
+# platforms):
 #   npm install -g --prefix ~/.local markdownlint-cli@0.44.0
 ensure_markdownlint() {
     if command -v markdownlint >/dev/null 2>&1; then
@@ -126,6 +129,7 @@ ensure_markdownlint() {
         warn "markdownlint: ERROR npm install failed"
     else
         warn "markdownlint: MISSING (registry unreachable — skipping npm install)"
+        warn "  if the machine should be online, the vmnet NAT may be stale — see README Troubleshooting"
     fi
     warn "markdownlint: install from macOS into the shared home (~/.local/bin is on the machine PATH):"
     warn "  npm install -g --prefix ~/.local '${MDL_PIN}'"

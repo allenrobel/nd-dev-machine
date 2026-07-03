@@ -327,9 +327,10 @@ when already healthy) before running the tool. In normal use you never need to
 run `nddoctor` by hand — it's there for an explicit check after a rebuild or when
 something looks off.
 
-**Offline machines.** The machine usually has no outbound network (the same
-reason `ndlint` passes `--offline`), so a plain `pipx inject` cannot reach
-PyPI. `nddoctor` therefore heals from a **local wheelhouse** at
+**Offline resilience.** The machine normally has full outbound internet via
+the container system's vmnet NAT, but that NAT can silently go stale (see
+[Troubleshooting](#troubleshooting)) — and while it is, a plain `pipx inject`
+cannot reach PyPI. `nddoctor` therefore prefers a **local wheelhouse** at
 `~/.cache/nd-wheelhouse` (override with `ND_WHEELHOUSE`) whenever it contains
 wheels, falling back to PyPI otherwise. Populate it from macOS — the home
 directory is shared via virtiofs, so the same path is visible inside the
@@ -346,8 +347,9 @@ The collection's CLAUDE.md documents `ndm markdownlint <file>.md`, so the
 `markdownlint` CLI (npm package `markdownlint-cli`) must exist **inside** the
 machine. The `Dockerfile` bakes it into the image alongside Claude Code —
 Node.js/npm are already there, and the image build runs on macOS where the
-npm registry is reachable (the machine itself usually has no outbound
-network, which is why this is *not* done in `first-boot.sh`).
+npm registry is reachable (the machine's own outbound network can silently
+go stale — see [Troubleshooting](#troubleshooting) — which is why this is
+*not* done in `first-boot.sh`).
 
 The package is **pinned at `markdownlint-cli@0.44.0`**: the image's apt
 `nodejs` is 18.x, and `markdownlint-cli >= 0.45.0` requires Node >= 20 (npm
@@ -357,7 +359,7 @@ together if the image ever moves to a newer Node.
 
 A machine built from an older image won't have it. `nddoctor` checks for the
 binary and, when the npm registry is reachable, heals with `npm install -g`.
-It probes reachability first (quick `curl`) because on the offline machine a
+It probes reachability first (quick `curl`) because with the network down a
 plain `npm install` burns many minutes of TCP retries before failing — and
 npm's cache can't bridge the gap either: package metadata cached by the macOS
 npm is not readable by the machine's older npm (`ENOTCACHED`).
@@ -433,6 +435,43 @@ rm -rf ~/Library/Application\ Support/container
 container system start
 bash setup.sh
 ```
+
+**Machine has no outbound network — `ndtest` hangs at "Installing requirements"**
+
+The machine is *supposed* to have full outbound internet access through the
+container system's vmnet NAT (`bridge100` + `InternetSharing` on macOS).
+That NAT can silently go stale — typically after days of sleep/wake cycles
+and network changes — with a distinctive signature:
+
+- DNS still resolves inside the machine (the gateway answers it locally),
+  but every forwarded TCP/ICMP connection black-holes (`SYN-SENT` forever
+  in `ss -tnp`)
+- `ndtest` hangs at `Installing requirements for Python 3.12 [venv]`
+  (ansible-test bootstrapping pip from PyPI)
+- `nddoctor` reports the npm registry unreachable, and `container build`
+  times out fetching packages (the builder VM sits behind the same NAT)
+
+Confirm the macOS host itself is online, then restart the container system
+to rebuild the NAT state:
+
+```bash
+container machine stop nd-dev
+container system stop
+container system start
+container machine run -n nd-dev --root -- true   # boot the machine again
+```
+
+Verify from inside the machine:
+
+```bash
+ndm curl -sI --max-time 5 https://pypi.org/
+```
+
+The offline fallbacks (`ndlint --offline`, the pip wheelhouse, nddoctor's
+npm reachability probe) exist so linting and healing keep working while the
+NAT is broken — they are resilience against this failure mode, not a design
+statement that the machine is meant to be offline. (Observed on macOS 27
+beta 1; whether the beta is a factor is unconfirmed.)
 
 ### Machine doesn't start at login
 
