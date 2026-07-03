@@ -12,8 +12,13 @@
 # $HOME/.local/share/pipx/venvs. Invoked via the `nddoctor`, `ndpytest`,
 # `ndmypy`, and `ndpylint` shell functions in nd-dev.sh.
 #
+# Also verifies the npm-installed markdownlint CLI (issue #14): the collection
+# docs call `ndm markdownlint`, which fails on machines built from an image
+# that predates the Dockerfile baking markdownlint-cli in.
+#
 # Usage:
-#   nddoctor.sh                       check + heal pytest, pylint, mypy; report
+#   nddoctor.sh                       check + heal pytest, pylint, mypy,
+#                                     markdownlint; report
 #   nddoctor.sh run <tool> [args...]  heal <tool>'s venv quietly, then exec it
 #
 set -u
@@ -28,6 +33,9 @@ VENVS="${HOME}/.local/share/pipx/venvs"
 #   python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
 #     --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
 WHEELHOUSE="${ND_WHEELHOUSE:-${HOME}/.cache/nd-wheelhouse}"
+# markdownlint-cli pin — keep in sync with the Dockerfile. 0.44.0 is the last
+# release that runs on the image's Node 18 (>=0.45.0 needs Node >=20).
+MDL_PIN='markdownlint-cli@0.44.0'
 QUIET=0   # set to 1 in `run` mode: only speak when an action is taken
 
 note() { [ "$QUIET" -eq 1 ] || echo "[nddoctor] $*" >&2; }
@@ -93,6 +101,38 @@ ensure_pydantic() {
     return 1
 }
 
+# Ensure the markdownlint CLI (npm package markdownlint-cli) is on PATH.
+# The Dockerfile bakes it into the image; a machine built from an older image
+# won't have it. An npm install is only attempted when the registry is
+# reachable (quick curl probe first): on the offline machine a plain
+# `npm install` burns many minutes of TCP retries before failing, and npm's
+# cache can't bridge the gap either — packuments cached by macOS npm are not
+# readable by the machine's older npm (ENOTCACHED). The offline fix is to
+# install from macOS into the virtiofs-shared home (~/.local/bin is first on
+# the machine's PATH, and markdownlint-cli is pure JS so one install serves
+# both platforms):
+#   npm install -g --prefix ~/.local markdownlint-cli@0.44.0
+ensure_markdownlint() {
+    if command -v markdownlint >/dev/null 2>&1; then
+        note "markdownlint: $(markdownlint --version 2>/dev/null) OK"
+        return 0
+    fi
+    if curl -sI --max-time 5 https://registry.npmjs.org/ >/dev/null 2>&1; then
+        warn "markdownlint: MISSING -> installing ${MDL_PIN} via npm"
+        if npm install -g "$MDL_PIN" >/dev/null 2>&1; then
+            warn "markdownlint: $(markdownlint --version 2>/dev/null) (healed)"
+            return 0
+        fi
+        warn "markdownlint: ERROR npm install failed"
+    else
+        warn "markdownlint: MISSING (registry unreachable — skipping npm install)"
+    fi
+    warn "markdownlint: install from macOS into the shared home (~/.local/bin is on the machine PATH):"
+    warn "  npm install -g --prefix ~/.local '${MDL_PIN}'"
+    warn "  or rebuild the image (the Dockerfile now bakes it in)"
+    return 1
+}
+
 # pytest additionally needs the pytest-ansible plugin in its venv.
 ensure_pytest_ansible() {
     [ -x "${VENVS}/pytest/bin/python" ] || return 1
@@ -104,7 +144,8 @@ ensure_pytest_ansible() {
         || { warn "pytest: ERROR pytest-ansible inject failed"; return 1; }
 }
 
-# Heal a single tool's venv (venv name == tool name for all three).
+# Heal a single tool's venv (venv name == tool name for the pipx three);
+# markdownlint is npm-global rather than a pipx venv, so it gets its own case.
 heal() {
     case "$1" in
         pytest)
@@ -112,6 +153,8 @@ heal() {
             ensure_pydantic pytest || rc=1
             ensure_pytest_ansible || rc=1
             return $rc ;;
+        markdownlint)
+            ensure_markdownlint ;;
         *)
             ensure_pydantic "$1" ;;
     esac
@@ -127,14 +170,14 @@ if [ "${1:-}" = "run" ]; then
     exec "$tool" "$@"
 fi
 
-# ── report mode: check/heal all three, summarise ──────────────────────────────
+# ── report mode: check/heal everything, summarise ─────────────────────────────
 rc=0
-for v in pytest pylint mypy; do
+for v in pytest pylint mypy markdownlint; do
     heal "$v" || rc=1
 done
 if [ "$rc" -eq 0 ]; then
-    note "all tool venvs healthy (pydantic >= ${FLOOR})"
+    note "all tools healthy (pydantic >= ${FLOOR}; markdownlint on PATH)"
 else
-    warn "one or more venvs need attention (see above)"
+    warn "one or more tools need attention (see above)"
 fi
 exit "$rc"

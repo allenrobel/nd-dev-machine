@@ -57,6 +57,9 @@ ndpylint plugins/modules/nd_interface_loopback.py
 
 # mypy
 ndmypy plugins/modules/
+
+# markdownlint (baked into the machine image via npm)
+ndm markdownlint README.md
 ```
 
 ---
@@ -151,6 +154,7 @@ ndlogs                                  # check LaunchAgent boot logs
 - When asked to run tests, use the `ndtest` wrapper or the explicit
   `container machine run` form shown above.
 - When asked to lint or type-check, use `ndlint`, `ndmypy`, or `ndpylint`.
+  For markdown files, use `ndm markdownlint <file>.md`.
 - File paths are the same on macOS and inside the machine — use `$(pwd)`
   to preserve the caller's working directory.
 - Do not install Python packages on macOS for this collection; install
