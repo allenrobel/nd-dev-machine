@@ -128,7 +128,8 @@ ndtest --test validate-modules
 # Target a specific file
 ndtest --test validate-modules plugins/modules/nd_my_module.py
 
-# Run with the full Docker container (matches CI exactly)
+# Run with the full Docker container (closest to CI — see
+# "Local testing vs GitHub CI" below)
 ndtest-docker --test validate-modules
 
 # Linting and type checking
@@ -149,6 +150,62 @@ ndlogs
 All commands run inside the machine against your macOS collection path.
 You never need to copy files or change directories differently from how
 you work today.
+
+## Local testing vs GitHub CI
+
+`ndtest` does **not** read the collection's
+`.github/workflows/ansible-test.yml` — that file only configures GitHub
+Actions. Locally, `ndtest` simply runs `ansible-test sanity --venv`
+inside the machine, and `ansible-test` decides on its own which rules
+and Python versions to exercise. The result is close to CI, but not
+identical. Three gaps to be aware of:
+
+1. **Interpreter coverage.** The machine ships only Ubuntu 24.04's
+   Python 3.12. With `--venv`, per-interpreter sanity tests (`compile`,
+   `import`) run only on interpreters actually installed, so `ndtest`
+   emits warnings like:
+
+   ```text
+   WARNING: Skipping sanity test "compile" on Python 3.13 ...
+   WARNING: Skipping sanity test "compile" on Python 3.14 ...
+   ```
+
+   CI runs `ansible-test sanity --docker`, whose test container ships
+   every supported interpreter, so those tests run on all versions
+   there. `ndtest-docker` uses the same container and closes this gap
+   completely.
+
+2. **ansible-core version.** The machine has a single ansible-core
+   (whatever the image baked in — currently 2.21), while the CI matrix
+   runs stable-2.16 through stable-2.19. Different ansible-core
+   versions ship different sanity rule sets and consult different
+   `tests/sanity/ignore-2.XX.txt` files, so a local pass does not
+   guarantee a pass on every CI cell — and vice versa. (This is also
+   why local runs mention Python 3.14 at all: ansible-core 2.21
+   supports it, while CI's newest branch, 2.19, stops at 3.13.)
+
+   `ndtest-docker` does *not* close this gap — the test container is
+   selected by the installed ansible-test. To reproduce a specific CI
+   cell, install that stable branch into your user site first (it
+   shadows the system copy), run the test, then uninstall to revert:
+
+   ```bash
+   ndm pip3 install --user --break-system-packages \
+     https://github.com/ansible/ansible/archive/stable-2.19.tar.gz
+   ndtest-docker
+   ndm pip3 uninstall --break-system-packages -y ansible-core
+   ```
+
+3. **Scope.** CI also runs black (pep8 job), galaxy-importer, and the
+   unit tests across the whole matrix; `ndtest` covers only `sanity`.
+   Run `ndpytest` for the unit tests and black separately for the full
+   pre-PR picture.
+
+In practice: `ndtest` is the fast inner loop, and the skipped
+3.13/3.14 compile checks are low-risk (they only catch syntax that is
+invalid on those interpreters). Run `ndtest-docker` before opening a
+PR, and reach for the pinned-ansible-core recipe above only when
+chasing a CI-only failure.
 
 ## Claude Code
 

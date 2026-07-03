@@ -90,8 +90,10 @@ function ndtest {
     _ndm_run "$(pwd)" ansible-test sanity --venv "$@"
 }
 
-# Run ansible-test sanity using --docker default (slower, matches CI exactly).
-# Use before opening a PR or when debugging a CI-specific failure.
+# Run ansible-test sanity using --docker default (slower; same all-Pythons
+# container as CI, but still the machine's single ansible-core version — see
+# README "Local testing vs GitHub CI"). Use before opening a PR or when
+# debugging a CI-specific failure.
 #
 # Usage:
 #   ndtest-docker                                           → all sanity checks
