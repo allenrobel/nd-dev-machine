@@ -169,6 +169,8 @@ restart that fixes it.
 - File paths are the same on macOS and inside the machine — use `$(pwd)`
   to preserve the caller's working directory.
 - Do not install Python packages on macOS for this collection; install
-  inside the machine using `ndm pip3 install --user <pkg>`. The sole
+  inside the machine using
+  `ndm pip3 install --user --break-system-packages <pkg>`
+  (Ubuntu 24.04 enforces PEP 668, so bare `--user` is rejected). The sole
   exception is the macOS editor venv `.venv-Darwin-arm64` (IntelliSense
   only) — refresh it with `setup.sh` STEP 8 / `uv sync`, never by hand.
