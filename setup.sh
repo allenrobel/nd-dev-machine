@@ -7,7 +7,8 @@
 # All files are expected flat in the same directory as this script:
 #   setup.sh
 #   Dockerfile
-#   first-boot.sh
+#   first-boot.sh        (rootfs-only; runs before the home mount exists)
+#   nd-provision.sh      (home-dependent provisioning; run via machine run)
 #   nd-dev.sh            (shell aliases)
 #   nd-dns-override.service
 #   nd-dns-override.path
@@ -24,6 +25,12 @@
 #                       mDNSResponder's DNS-proxy role. See README
 #                       "Troubleshooting". Example:
 #                         ND_GUEST_DNS=1.1.1.1 bash setup.sh
+#                       The value is also recorded in
+#                       ~/.config/nd-dev/guest-dns so first-boot.sh can apply
+#                       it during machine create (its one-time apt/pipx
+#                       provisioning needs working DNS). To stop using the
+#                       override, remove that file and the machine's
+#                       /etc/nd-dev/dns-override, then reboot the machine.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -76,6 +83,17 @@ header "STEP 3 — Create the nd-dev container machine"
 note "6 CPUs, 8 GB RAM — adjust later with:"
 note "  container machine set -n nd-dev cpus=N memory=XG && container machine stop nd-dev"
 
+# Record the guest DNS override where first-boot.sh can see it (the home
+# directory is virtiofs-mounted into the machine). Must happen BEFORE
+# machine create: first-boot needs working DNS for its apt/pipx installs,
+# and the in-machine override below is only applied after create.
+if [ -n "${ND_GUEST_DNS:-}" ]; then
+    step "Recording guest DNS for first-boot (~/.config/nd-dev/guest-dns)..."
+    mkdir -p "${HOME}/.config/nd-dev"
+    printf '%s\n' "${ND_GUEST_DNS}" > "${HOME}/.config/nd-dev/guest-dns"
+    ok "Recorded — future machine creates provision with DNS ${ND_GUEST_DNS}"
+fi
+
 if container machine ls 2>/dev/null | grep -q '^nd-dev'; then
     warn "Machine 'nd-dev' already exists — skipping create."
     warn "To rebuild from scratch:  container machine rm nd-dev  then re-run this script."
@@ -98,44 +116,35 @@ else
     ok "Machine created"
 fi
 
-# Guest DNS override — applies on fresh creates AND re-runs against an
-# existing machine, so a broken host can be healed by re-running setup.sh
-# with ND_GUEST_DNS set.
-if [ -n "${ND_GUEST_DNS:-}" ]; then
-    step "Applying guest DNS override (${ND_GUEST_DNS}) inside nd-dev..."
-    # Written via a temp script on the virtiofs mount — 'container machine
-    # run -- bash -c <quoted cmd>' mangles quoted args and swallows stdout
-    # (see nd-dev.sh design notes).
-    mkdir -p "${SCRIPT_DIR}/.tmp"
-    DNS_SCRIPT="$(mktemp "${SCRIPT_DIR}/.tmp/dns-XXXXXXXX")"
-    cat > "${DNS_SCRIPT}" << DNSEOF
-#!/bin/bash
-set -e
-mkdir -p /etc/nd-dev
-printf 'nameserver %s\n' '${ND_GUEST_DNS}' > /etc/nd-dev/dns-override
-# Machines created from a pre-nd-dns-override image lack the units —
-# install them from the virtiofs-shared repo dir so the override survives
-# reboots without an image rebuild.
-if [ ! -f /etc/systemd/system/nd-dns-override.timer ]; then
-    cp '${SCRIPT_DIR}/nd-dns-override.service' \\
-       '${SCRIPT_DIR}/nd-dns-override.path' \\
-       '${SCRIPT_DIR}/nd-dns-override.timer' /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable nd-dns-override.service nd-dns-override.path nd-dns-override.timer
+# The machine takes a few seconds after create (or after a cold boot) before
+# it accepts commands — running one too early fails with "Operation not
+# supported by device". Wait until it responds before the steps below.
+step "Waiting for nd-dev to accept commands..."
+MACHINE_READY=0
+for _i in $(seq 1 30); do
+    if container machine run -n nd-dev --root -- true > /dev/null 2>&1; then
+        MACHINE_READY=1
+        break
+    fi
+    sleep 3
+done
+if [ "${MACHINE_READY}" -eq 1 ]; then
+    ok "Machine is responding"
+else
+    warn "nd-dev not responding after 90s — subsequent steps may fail."
 fi
-# Units were enabled but not started if the override file didn't exist at
-# boot (ConditionPathExists) — start them now that it does.
-systemctl start nd-dns-override.path nd-dns-override.timer
-# Apply immediately; the path unit + boot timer re-apply whenever the
-# machine runtime rewrites /etc/resolv.conf (it does so on every boot).
-rm -f /etc/resolv.conf
-cp /etc/nd-dev/dns-override /etc/resolv.conf
-DNSEOF
-    chmod +x "${DNS_SCRIPT}"
-    container machine run -n nd-dev --root -- "${DNS_SCRIPT}"
-    rm -f "${DNS_SCRIPT}"
-    ok "Guest DNS override applied (nd-dns-override path/timer units keep it across boots)"
-fi
+
+# In-machine provisioning (guest DNS override, containers.conf, podman
+# migrate, pipx toolchain, home rc patches). This CANNOT live in
+# first-boot.sh: the runtime runs that script before mounting the macOS
+# home, so home-dependent steps there silently land on a shadowed local
+# stub. nd-provision.sh is idempotent — it runs on fresh creates AND on
+# re-runs against an existing machine, so a machine that was provisioned
+# while its network was broken is healed by re-running setup.sh.
+step "Provisioning inside nd-dev (DNS override, Podman config, pipx toolchain)..."
+container machine run -n nd-dev --root -- \
+    "${SCRIPT_DIR}/nd-provision.sh" "$(whoami)" "${HOME}"
+ok "In-machine provisioning complete"
 
 # ─────────────────────────────────────────────────────────────────────────────
 header "STEP 4 — Verify the machine (home mount + identity)"
@@ -155,16 +164,20 @@ else
     warn "STEP 7 to install CLAUDE.md."
 fi
 
-# ansible-test check — 'ansible-test --version' exits 0; bare 'ansible-test' exits 2
+# ansible-test check — use 'command -v': current ansible-core makes
+# 'ansible-test --version' error out demanding a COMMAND argument, so a
+# version probe false-negatives even when ansible-test is installed.
 step "Verifying ansible-test..."
-if container machine run -n nd-dev -- bash -lc "ansible-test --version" \
+if container machine run -n nd-dev -- bash -lc "command -v ansible-test" \
         > /dev/null 2>&1; then
     ok "ansible-test available"
-    container machine run -n nd-dev -- bash -lc "ansible-test --version"
+    # HOME=/tmp: the runtime hands plain (non --root) sessions HOME=/home/<user>,
+    # which doesn't exist — ansible would fail creating ~/.ansible there.
+    container machine run -n nd-dev -- bash -lc "HOME=/tmp ansible --version | head -1"
 else
-    warn "ansible-test not found in PATH yet."
-    warn "The first-boot pip install may still be running. Wait ~60s then check with:"
-    warn "  container machine run -n nd-dev -- bash -lc 'ansible-test --version'"
+    warn "ansible-test not found in PATH — the image build may be stale."
+    warn "Check with:"
+    warn "  container machine run -n nd-dev -- bash -lc 'command -v ansible-test'"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
