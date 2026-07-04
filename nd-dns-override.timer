@@ -1,0 +1,17 @@
+[Unit]
+Description=Boot-time sweep for nd-dev DNS override
+# No-op unless setup.sh (ND_GUEST_DNS) has provisioned an override file.
+ConditionPathExists=/etc/nd-dev/dns-override
+
+[Timer]
+# The machine runtime's agent rewrites /etc/resolv.conf out-of-band at an
+# unpredictable moment during boot. nd-dns-override.path catches the rewrite
+# when its inotify watch is already up; this timer sweeps up the other
+# ordering (agent wrote first). 5s is comfortably after the agent's write,
+# which happens within the machine bootstrap window.
+OnBootSec=5s
+AccuracySec=1s
+Unit=nd-dns-override.service
+
+[Install]
+WantedBy=timers.target

@@ -161,6 +161,13 @@ enough; the NAT stays poisoned). See the README "Troubleshooting" section
 for the diagnosis and the container-system restart (exit node off) that
 fixes it.
 
+A second, distinct failure mode exists on managed (MDM/EDR) hosts: DNS is
+refused (`Temporary failure resolving`) while raw-IP traffic works, because
+endpoint security blocks mDNSResponder's DNS proxy on the NAT gateway. The
+fix is `ND_GUEST_DNS=<ip> bash setup.sh`, which points the builder and the
+machine at an external resolver — see the README "Troubleshooting" section
+("Guest DNS refused").
+
 ---
 
 ## Notes for Claude Code

@@ -9,9 +9,21 @@
 #   Dockerfile
 #   first-boot.sh
 #   nd-dev.sh            (shell aliases)
+#   nd-dns-override.service
+#   nd-dns-override.path
+#   nd-dns-override.timer
 #   CLAUDE.md
 #   com.apple.container.system.plist
 #   com.user.container.nd-dev.plist
+#
+# Optional environment knobs:
+#   ND_GUEST_DNS=<ip>   Give the builder VM and the nd-dev machine an external
+#                       DNS server instead of the vmnet NAT gateway
+#                       (192.168.64.1). Use when the gateway refuses DNS —
+#                       e.g. managed hosts where endpoint security blocks
+#                       mDNSResponder's DNS-proxy role. See README
+#                       "Troubleshooting". Example:
+#                         ND_GUEST_DNS=1.1.1.1 bash setup.sh
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +52,18 @@ header "STEP 2 — Build the nd-dev image"
 note "This pulls ubuntu:24.04, installs systemd/Podman/Python/ansible-core"
 note "and Claude Code. Expect 3-6 minutes on first run; cached layers are fast."
 note "Build context: ${SCRIPT_DIR}"
+
+if [ -n "${ND_GUEST_DNS:-}" ]; then
+    step "ND_GUEST_DNS=${ND_GUEST_DNS} — recreating builder with external DNS..."
+    # The builder VM normally resolves via the vmnet NAT gateway; when the
+    # host's DNS proxy is blocked (see README "Troubleshooting"), the build
+    # fails with "Temporary failure resolving". --dns points the builder at
+    # an external resolver instead. The flag only takes effect at builder
+    # creation, so drop any existing builder first.
+    container builder delete 2>/dev/null || true
+    container builder start --dns "${ND_GUEST_DNS}"
+    ok "Builder started with --dns ${ND_GUEST_DNS}"
+fi
 
 step "Building local/nd-dev:latest..."
 container build --pull -t local/nd-dev:latest "${SCRIPT_DIR}"
@@ -72,6 +96,45 @@ else
         --memory 8G \
         --set-default
     ok "Machine created"
+fi
+
+# Guest DNS override — applies on fresh creates AND re-runs against an
+# existing machine, so a broken host can be healed by re-running setup.sh
+# with ND_GUEST_DNS set.
+if [ -n "${ND_GUEST_DNS:-}" ]; then
+    step "Applying guest DNS override (${ND_GUEST_DNS}) inside nd-dev..."
+    # Written via a temp script on the virtiofs mount — 'container machine
+    # run -- bash -c <quoted cmd>' mangles quoted args and swallows stdout
+    # (see nd-dev.sh design notes).
+    mkdir -p "${SCRIPT_DIR}/.tmp"
+    DNS_SCRIPT="$(mktemp "${SCRIPT_DIR}/.tmp/dns-XXXXXXXX")"
+    cat > "${DNS_SCRIPT}" << DNSEOF
+#!/bin/bash
+set -e
+mkdir -p /etc/nd-dev
+printf 'nameserver %s\n' '${ND_GUEST_DNS}' > /etc/nd-dev/dns-override
+# Machines created from a pre-nd-dns-override image lack the units —
+# install them from the virtiofs-shared repo dir so the override survives
+# reboots without an image rebuild.
+if [ ! -f /etc/systemd/system/nd-dns-override.timer ]; then
+    cp '${SCRIPT_DIR}/nd-dns-override.service' \\
+       '${SCRIPT_DIR}/nd-dns-override.path' \\
+       '${SCRIPT_DIR}/nd-dns-override.timer' /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable nd-dns-override.service nd-dns-override.path nd-dns-override.timer
+fi
+# Units were enabled but not started if the override file didn't exist at
+# boot (ConditionPathExists) — start them now that it does.
+systemctl start nd-dns-override.path nd-dns-override.timer
+# Apply immediately; the path unit + boot timer re-apply whenever the
+# machine runtime rewrites /etc/resolv.conf (it does so on every boot).
+rm -f /etc/resolv.conf
+cp /etc/nd-dev/dns-override /etc/resolv.conf
+DNSEOF
+    chmod +x "${DNS_SCRIPT}"
+    container machine run -n nd-dev --root -- "${DNS_SCRIPT}"
+    rm -f "${DNS_SCRIPT}"
+    ok "Guest DNS override applied (nd-dns-override path/timer units keep it across boots)"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

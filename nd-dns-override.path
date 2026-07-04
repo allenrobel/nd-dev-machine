@@ -1,0 +1,17 @@
+[Unit]
+Description=Watch /etc/resolv.conf and re-apply nd-dev DNS override
+# No-op unless setup.sh (ND_GUEST_DNS) has provisioned an override file.
+ConditionPathExists=/etc/nd-dev/dns-override
+
+[Path]
+# Fires nd-dns-override.service whenever the machine runtime (or anything
+# else) rewrites /etc/resolv.conf — see the service file for why watching
+# beats boot-ordering here.
+PathChanged=/etc/resolv.conf
+PathModified=/etc/resolv.conf
+
+[Install]
+# paths.target activates in early boot — the watch must be up before the
+# machine runtime's agent rewrites resolv.conf. nd-dns-override.timer covers
+# the ordering where the agent wins anyway.
+WantedBy=paths.target
