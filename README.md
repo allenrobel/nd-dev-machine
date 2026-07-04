@@ -42,6 +42,9 @@ nd-dev-machine/
 ├── first-boot.sh                       ← user provisioning, runs once on first machine boot
 ├── nddoctor.sh                         ← verify/self-heal the dev tools (pipx venvs, markdownlint)
 ├── nd-dev.sh                           ← shell aliases (ndm, ndtest, ndlint, nddoctor, …)
+├── nd-dns-override.service             ← guest unit: apply DNS override
+├── nd-dns-override.path                ← guest watcher: re-apply on rewrite
+├── nd-dns-override.timer               ← guest boot sweep for the override
 ├── ndm-env.sh                          ← env shim used by nd-dev.sh (auto-created by setup.sh)
 ├── CLAUDE.md                           ← Claude Code instructions for the ND collection
 ├── com.apple.container.system.plist    ← LaunchAgent: start container system at login
@@ -554,6 +557,64 @@ The offline fallbacks (`ndlint --offline`, the pip wheelhouse, nddoctor's
 npm reachability probe) exist so linting and healing keep working while the
 NAT is broken — they are resilience against this failure mode, not a design
 statement that the machine is meant to be offline.
+
+**Guest DNS refused (managed host) — `container build` / apt / pip fail with
+"Temporary failure resolving", but raw-IP traffic works**
+
+This is the *inverse* signature of the Tailscale failure above: there, DNS
+resolves but forwarded connections black-hole; here, forwarding works but
+DNS is refused.
+
+On a healthy host, guest DNS is served by macOS **`mDNSResponder`**, which
+listens on the vmnet NAT gateway (`192.168.64.1:53`) as a DNS proxy. On some
+managed (MDM/EDR) hosts that listener never comes up — observed on a
+corporate Mac with Cisco Secure Endpoint + Secure Client filter extensions
+active — so guests get connection-refused for every DNS query while NAT
+forwarding itself is fine. Disconnecting the VPN doesn't help (it isn't the
+VPN: the default route stays on `en0`), and neither does restarting the
+container system.
+
+Confirm the signature:
+
+```bash
+# Guest side — DNS fails, raw connectivity works:
+container run --rm docker.io/library/ubuntu:24.04 bash -c '
+  getent hosts ports.ubuntu.com && echo DNS-OK || echo DNS-FAILED
+  timeout 5 bash -c "</dev/tcp/1.1.1.1/53" && echo FORWARD-OK || echo FORWARD-FAILED'
+
+# Host side — empty output means nothing is listening on port 53
+# (on a healthy host this shows mDNSResponder):
+netstat -anv -p udp | grep -E '\.53\s'
+```
+
+The fix: bypass the gateway proxy by giving the builder VM and the machine
+an external DNS server. Safe to re-run against an existing machine:
+
+```bash
+ND_GUEST_DNS=1.1.1.1 bash setup.sh
+```
+
+This recreates the builder with `--dns`, writes `/etc/nd-dev/dns-override`
+inside the machine, and enables the `nd-dns-override` units: a path watcher
+that re-copies the override over `/etc/resolv.conf` whenever it changes,
+plus a 5-second boot timer. Two triggers because the machine runtime's
+agent rewrites `resolv.conf` to point at the gateway *out-of-band on every
+boot, racing systemd* — verified empirically: a plain
+`WantedBy=multi-user.target` oneshot ran at boot and still lost to the
+agent's rewrite in the same second, and an early-boot inotify watch alone
+can also lose the race. The timer sweeps up whichever ordering happens.
+Without `ND_GUEST_DNS` set, all the units are inert and the machine uses
+the gateway as normal.
+
+Do **not** be tempted by `chattr +i /etc/resolv.conf` instead: the agent's
+`configureDns` bootstrap step hard-fails when its write is denied and the
+machine no longer boots at all (recovery requires
+`container machine rm` + recreate).
+
+Caveat: pick a resolver the local network actually allows. Corporate
+networks often block outbound DNS to public resolvers — if `1.1.1.1` is
+blocked on-site, use the host's own DNS servers (first `nameserver` shown
+by `scutil --dns`) instead.
 
 ### Machine doesn't start at login
 

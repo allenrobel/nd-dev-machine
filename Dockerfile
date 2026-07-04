@@ -67,6 +67,20 @@ RUN pip3 install --break-system-packages ansible-core
 # bump both together if the image ever moves to a newer Node.
 RUN npm install -g @anthropic-ai/claude-code markdownlint-cli@0.44.0
 
+# ── Guest DNS override (managed-host workaround) ──────────────────────────────
+# On some managed macOS hosts, endpoint-security software blocks mDNSResponder
+# from listening on the vmnet NAT gateway's port 53, so guests get
+# "connection refused" for DNS while NAT forwarding itself still works. The
+# machine runtime's agent rewrites /etc/resolv.conf (→ gateway) out-of-band
+# on every boot, racing systemd — the path unit watches resolv.conf and
+# re-applies /etc/nd-dev/dns-override on any rewrite, and the timer sweeps
+# up boots where the agent wrote before the watch was established. (Do NOT
+# try chattr +i instead: the agent's configureDns step hard-fails and the
+# machine no longer boots.) All units are no-ops unless setup.sh
+# (ND_GUEST_DNS) has written the override file. See README "Troubleshooting".
+COPY nd-dns-override.service nd-dns-override.path nd-dns-override.timer /etc/systemd/system/
+RUN systemctl enable nd-dns-override.service nd-dns-override.path nd-dns-override.timer
+
 # ── First-boot user bootstrap ──────────────────────────────────────────────────
 # Called ONCE on first boot by the container machine runtime (as root), with
 # CONTAINER_USER / CONTAINER_UID / CONTAINER_GID / CONTAINER_HOME set to match

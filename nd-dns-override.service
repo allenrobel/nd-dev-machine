@@ -1,0 +1,20 @@
+[Unit]
+Description=nd-dev guest DNS override (bypass blocked host NAT DNS proxy)
+# No-op unless setup.sh (ND_GUEST_DNS) has provisioned an override file.
+ConditionPathExists=/etc/nd-dev/dns-override
+
+[Service]
+Type=oneshot
+# The machine runtime's agent rewrites /etc/resolv.conf (pointing at the
+# vmnet NAT gateway) out-of-band during boot, concurrently with systemd —
+# plain unit ordering cannot reliably win that race. This service is instead
+# (re-)triggered by nd-dns-override.path whenever resolv.conf changes. The
+# cmp guard makes it converge: re-applying the override triggers the path
+# unit once more, which then finds the content already correct and stops.
+# rm before cp so a symlinked resolv.conf can never redirect the write into
+# systemd-resolved's stub file. No RemainAfterExit: the unit must return to
+# inactive so the path unit can trigger it again.
+ExecStart=/bin/sh -c 'cmp -s /etc/nd-dev/dns-override /etc/resolv.conf || { rm -f /etc/resolv.conf; cp /etc/nd-dev/dns-override /etc/resolv.conf; }'
+
+[Install]
+WantedBy=multi-user.target
