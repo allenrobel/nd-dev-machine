@@ -107,8 +107,9 @@ the venvs are healthy. Manual fallback:
 ndm pipx inject pytest 'pydantic>=2.12.5'
 ```
 
-This is provisioned by `first-boot.sh` and kept healthy by `nddoctor.sh`; see
-the README "Python CLI tooling" section for details.
+This is provisioned by `nd-provision.sh` (run by `setup.sh`; idempotent, can
+be re-run any time) and kept healthy by `nddoctor.sh`; see the README
+"Python CLI tooling" section for details.
 
 ---
 

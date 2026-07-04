@@ -79,7 +79,7 @@ inject_pydantic() {
 ensure_pydantic() {
     venv="$1"
     if [ ! -x "${VENVS}/${venv}/bin/python" ]; then
-        warn "${venv}: pipx venv not found — run setup.sh / first-boot.sh"
+        warn "${venv}: pipx venv not found — run: sudo ~/nd-dev-machine/nd-provision.sh \"\$(whoami)\" \"\$HOME\"  (or re-run setup.sh on macOS)"
         return 1
     fi
     ver="$(pydantic_version "$venv")"

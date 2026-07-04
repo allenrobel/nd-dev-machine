@@ -12,6 +12,13 @@
 # IMPORTANT: This script completely replaces Apple's built-in user creation.
 # We must successfully create the user or the machine create command fails.
 # Using /bin/sh (not bash) for maximum portability inside the VM.
+#
+# SCOPE: rootfs-only work. The runtime runs this script BEFORE mounting the
+# macOS home (verified empirically — CONTAINER_HOME is a root-owned local
+# stub at this point, later shadowed by the virtiofs mount). Anything that
+# reads or writes the real home (pipx toolchain, containers.conf, podman
+# migrate, guest DNS conf, home rc files) lives in nd-provision.sh, which
+# setup.sh runs via 'container machine run' after create.
 
 set -e
 
@@ -92,112 +99,25 @@ fix_subfile() {
 fix_subfile /etc/subuid
 fix_subfile /etc/subgid
 
-# ── Podman rootless configuration ─────────────────────────────────────────────
-# Four settings are required for ansible-test --docker to work inside the
-# Apple container machine VM:
-#
-#   pasta           — rootless network backend; avoids slirp4netns fallback
-#                     which tries to move netns into systemd user.slice via
-#                     D-Bus before the session is available
-#   cgroupfs        — explicit cgroup manager; prevents repeated "no systemd
-#                     user session" warnings and failed systemd cgroup setup
-#   seccomp=        — the default-test-container runs /sbin/init (systemd)
-#   unconfined        as PID 1, which requires syscalls blocked by the default
-#                     seccomp profile (pivot_root, unshare, etc.)
-#
-# Written to the virtiofs-mounted macOS home so it survives image rebuilds.
-echo "[create-user] Writing Podman containers.conf..."
-CONTAINERS_CONF="${CONTAINER_HOME}/.config/containers/containers.conf"
-mkdir -p "${CONTAINER_HOME}/.config/containers"
+# ── Home-dependent provisioning: NOT here ──────────────────────────────────────
+# containers.conf, podman migrate, pipx toolchain, guest DNS override, and
+# home rc patches all need the virtiofs home mount, which is not up yet —
+# they live in nd-provision.sh (run by setup.sh after machine create).
 
-# Only write if not already present (guard for re-runs)
-if ! grep -q 'nd-dev container machine' "${CONTAINERS_CONF}" 2>/dev/null; then
-    cat > "${CONTAINERS_CONF}" << EOF
-# Written by nd-dev container machine first-boot provisioning
-# Required for ansible-test --docker default inside Apple container machine VM
-
-[network]
-default_rootless_network_cmd = "pasta"
-
-[engine]
-cgroup_manager = "cgroupfs"
-
-[containers]
-seccomp_profile = "unconfined"
-EOF
-    chown "${CONTAINER_UID}:${CONTAINER_GID}" "${CONTAINERS_CONF}"
-    echo "[create-user] Written: ${CONTAINERS_CONF}"
-else
-    echo "[create-user] ${CONTAINERS_CONF} already configured — skipping"
-fi
-
-# ── Podman system migrate + user linger ───────────────────────────────────────
-# migrate: flushes Podman's storage state to pick up new subuid/subgid mappings
+# ── User linger ────────────────────────────────────────────────────────────────
 # enable-linger: creates a persistent systemd user session with D-Bus, required
 #   for Podman to move the rootless netns process into user-UID.slice. Without
 #   this, --docker default fails with "dbus: couldn't determine address of
 #   session bus" even with pasta configured.
-echo "[create-user] Running podman system migrate..."
-su - "${CONTAINER_USER}" -c "podman system migrate" \
-    || echo "[create-user] WARNING: podman system migrate failed — run manually"
-
+# (podman system migrate moved to nd-provision.sh — its storage lives under
+# the not-yet-mounted home.)
 echo "[create-user] Enabling user linger for ${CONTAINER_USER}..."
 loginctl enable-linger "${CONTAINER_USER}" \
     || echo "[create-user] WARNING: loginctl enable-linger failed — run manually: sudo loginctl enable-linger ${CONTAINER_USER}"
 
 echo "[create-user] User '${CONTAINER_USER}' ready."
 
-# ── Per-user Python toolchain ──────────────────────────────────────────────────
-# Ubuntu 24.04 enforces PEP 668 — pip install --user is blocked outside a venv.
-# Strategy:
-#   pipx  — manages isolated venvs for standalone CLI tools (pytest, pylint, etc.)
-#           Installs binaries to ~/.local/bin, which is on PATH.
-#   apt   — installs pipx itself (cleanest approach on Ubuntu 24.04)
-# Everything lands in ~/.local on the virtiofs-mounted macOS home, so it
-# survives image rebuilds without re-provisioning.
-echo "[create-user] Installing pipx..."
-apt-get install -y pipx > /dev/null 2>&1     || echo "[create-user] WARNING: pipx apt install failed"
-
-echo "[create-user] Installing Python CLI tools via pipx..."
-# pydantic must be injected into EVERY pipx venv that imports the collection's
-# code (pytest runs the orchestrator unit tests; pylint and mypy import the
-# models for analysis). Each pipx venv is isolated, so a system/user pydantic
-# is NOT visible inside them — without an explicit inject, pytest silently runs
-# under the collection's pydantic compat shim (model_post_init never fires) and
-# the orchestrator tests pass for the wrong reason.
-#
-# Version floor matches the collection's own pin in requirements.txt
-# (pydantic==2.12.5 on develop). The old <2.12 cap (issue #344: pydantic>=2.12
-# hard-errored at class construction on NDBaseOrchestrator) was dropped after
-# CiscoDevNet/ansible-nd#377 fixed the root cause. Keeping the floor here
-# ensures the machine's local test env matches CI on rebuild.
-PYDANTIC_PIN='pydantic>=2.12.5'
-#
-# Run pipx as the target user but with HOME explicitly set to CONTAINER_HOME
-# (the virtiofs-mounted macOS home). We cannot rely on 'su -' to set the
-# correct HOME because /etc/passwd may still reflect the pre-rename path
-# (/home/<user>) at the point this runs. Explicit HOME ensures pipx venvs
-# and binaries land in /Users/<user>/.local, which persists across rebuilds.
-su - "${CONTAINER_USER}" -c "
-    export HOME='${CONTAINER_HOME}'
-    export PATH='${CONTAINER_HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-    pipx install ansible-lint &&
-    pipx install pylint &&
-    pipx inject pylint '${PYDANTIC_PIN}' &&
-    pipx install mypy &&
-    pipx inject mypy '${PYDANTIC_PIN}' &&
-    pipx install pytest &&
-    pipx inject pytest pytest-ansible '${PYDANTIC_PIN}' &&
-    echo '[create-user] pipx installs complete'
-" || echo "[create-user] WARNING: pipx installs failed — run manually inside the machine:
-    sudo apt install -y pipx
-    export HOME=/Users/\$(whoami)
-    pipx install ansible-lint
-    pipx install pylint && pipx inject pylint 'pydantic>=2.12.5'
-    pipx install mypy   && pipx inject mypy   'pydantic>=2.12.5'
-    pipx install pytest && pipx inject pytest pytest-ansible 'pydantic>=2.12.5'"
-
-# ── Shell environment additions ────────────────────────────────────────────────
+# ── Shell environment additions (rootfs side only) ────────────────────────────
 MARKER="# --- nd-dev container machine ---"
 
 patch_rc() {
@@ -221,14 +141,12 @@ EOF
     echo "[create-user] Patched ${RC}"
 }
 
-# ${CONTAINER_HOME}/.bashrc usually does NOT exist (the macOS home has no bash
-# rc), so that patch is typically a no-op. The interactive `ndm` session is a
-# non-login interactive bash — the runtime does NOT start a login shell, so
-# /etc/profile and /etc/profile.d/*.sh are never sourced there. /etc/bash.bashrc
-# IS read by interactive bash (login and non-login), so patching it is what
-# actually gets these vars into interactive `ndm` shells.
-patch_rc "${CONTAINER_HOME}/.bashrc"
-patch_rc "${CONTAINER_HOME}/.zshrc"
+# The interactive `ndm` session is a non-login interactive bash — the runtime
+# does NOT start a login shell, so /etc/profile and /etc/profile.d/*.sh are
+# never sourced there. /etc/bash.bashrc IS read by interactive bash (login and
+# non-login), so patching it is what actually gets these vars into interactive
+# `ndm` shells. The home rc files (~/.bashrc, ~/.zshrc) are on the virtiofs
+# mount and are handled by nd-provision.sh.
 patch_rc /etc/bash.bashrc
 
 echo "[create-user] Done."

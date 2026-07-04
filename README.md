@@ -39,7 +39,8 @@ nd-dev-machine/
 ├── README.md                           ← you are here
 ├── setup.sh                            ← one-time setup script
 ├── Dockerfile                          ← Ubuntu 24.04 + systemd + Podman + Claude Code + markdownlint
-├── first-boot.sh                       ← user provisioning, runs once on first machine boot
+├── first-boot.sh                       ← rootfs-only setup, runs once on first machine boot
+├── nd-provision.sh                     ← home-side provisioning, run by setup.sh
 ├── nddoctor.sh                         ← verify/self-heal the dev tools (pipx venvs, markdownlint)
 ├── nd-dev.sh                           ← shell aliases (ndm, ndtest, ndlint, nddoctor, …)
 ├── nd-dns-override.service             ← guest unit: apply DNS override
@@ -332,7 +333,9 @@ visible on the other. No rsync, no Docker volume, no path difference.
 `ansible-test --docker` runs Podman *inside* the container machine to
 pull and run the ansible-test containers. Four configuration changes are
 required for this to work in the Apple VM environment, all applied
-automatically by `first-boot.sh`:
+automatically (`enable-linger` by `first-boot.sh`; the `containers.conf`
+settings by `nd-provision.sh`, since that file lives on the virtiofs home,
+which is not yet mounted when first-boot runs):
 
 | Setting | Why |
 | --- | --- |
@@ -351,7 +354,7 @@ container restarts.
 ### Python CLI tooling (pipx + pinned pydantic)
 
 The per-user dev tools — `ansible-lint`, `pylint`, `mypy`, and `pytest` — are
-installed by `first-boot.sh` via **pipx**, each in its own isolated venv under
+installed by `nd-provision.sh` via **pipx**, each in its own isolated venv under
 `~/.local/share/pipx/venvs/`. Because those venvs are isolated, a system- or
 user-level `pydantic` is **not** visible inside them. Every tool that imports
 the collection's models needs `pydantic` injected explicitly:
@@ -373,9 +376,11 @@ collection silently falls back to its pydantic compat shim (where
 `model_post_init` never fires) and the orchestrator tests pass for the wrong
 reason. The pin keeps the machine's local test env matching CI on every rebuild.
 
-**Self-healing.** `first-boot.sh` injects these once at first boot, so any later
-drift (a failed inject, a partial manual recovery, a rebuild) could silently
-degrade the env. `nddoctor.sh` is the idempotent guard against that:
+**Self-healing.** `nd-provision.sh` injects these at provisioning time, so any
+later drift (a failed inject, a partial manual recovery, a rebuild) could
+silently degrade the env. `nddoctor.sh` is the idempotent guard against that
+(for venvs that exist; a missing venv means provisioning never ran — re-run
+`nd-provision.sh` or `setup.sh`):
 
 ```bash
 nddoctor          # check + heal all three venvs, print a status report
@@ -606,6 +611,24 @@ can also lose the race. The timer sweeps up whichever ordering happens.
 Without `ND_GUEST_DNS` set, all the units are inert and the machine uses
 the gateway as normal.
 
+`setup.sh` also records the value in `~/.config/nd-dev/guest-dns`, which
+`nd-provision.sh` reads when setup.sh runs it after machine create — the
+override is applied there *before* the apt/pipx toolchain installs that
+need working DNS. (It cannot be applied from `first-boot.sh`: the runtime
+runs that script before the virtiofs home is mounted, so the conf file is
+not visible yet.) A machine that was provisioned while DNS was broken is
+missing the pipx toolchain (symptoms: `ndpytest`/`nddoctor` report "pipx
+venv not found"); heal it by re-running setup with the override recorded —
+no recreate needed, `nd-provision.sh` is idempotent:
+
+```bash
+ND_GUEST_DNS=1.1.1.1 bash setup.sh
+```
+
+To stop using the override later: `rm ~/.config/nd-dev/guest-dns`, then
+inside the machine `sudo rm /etc/nd-dev/dns-override`, then reboot the
+machine — the runtime restores stock gateway DNS on the next boot.
+
 Do **not** be tempted by `chattr +i /etc/resolv.conf` instead: the agent's
 `configureDns` bootstrap step hard-fails when its write is denied and the
 machine no longer boots at all (recovery requires
@@ -665,7 +688,7 @@ nddoctor          # check + heal pytest / pylint / mypy
 
 The `ndpytest` / `ndmypy` / `ndpylint` wrappers also self-heal automatically, so
 you usually hit this only after a manual `pipx` operation. Manual fallback if you
-ever need it (this is exactly what `nddoctor` and `first-boot.sh` do):
+ever need it (this is exactly what `nddoctor` and `nd-provision.sh` do):
 
 ```bash
 # Check the version inside each venv (should be >= 2.12.5)
