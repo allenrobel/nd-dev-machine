@@ -47,9 +47,10 @@ ansible-core version, not the CI matrix; see the README section
 ## Linting and Type Checking
 
 `ndlint` passes `--offline` automatically: the machine normally has outbound
-network, but its vmnet NAT can silently go stale (see the README
-"Troubleshooting" section) — and when it does, ansible-lint's Galaxy
-pre-flight fails and lets it exit 0 *without running the rules*. Deps are
+network, but a Tailscale exit node on the host silently breaks its vmnet NAT
+(see the README "Troubleshooting" section) — and when it's broken,
+ansible-lint's Galaxy pre-flight fails and lets it exit 0 *without running
+the rules*. Deps are
 already provisioned via uv.lock/pipx, so offline never loses anything here —
 no need to add `--offline` by hand.
 
@@ -95,8 +96,8 @@ on demand (e.g. after a rebuild), run `nddoctor`. Healing installs from the
 local wheelhouse `~/.cache/nd-wheelhouse` when it has wheels (populate it
 from macOS with `pip download`; see the README "Python CLI tooling"
 section), falling back to PyPI otherwise — the wheelhouse keeps healing
-working when the machine's NAT has silently gone stale (see the README
-"Troubleshooting" section).
+working when the machine's NAT has been broken by a Tailscale exit node
+(see the README "Troubleshooting" section).
 
 If unit tests behave oddly (e.g. `model_post_init` never fires, orchestrator
 tests passing — or failing — for the wrong reason), run `nddoctor` to confirm
@@ -154,9 +155,11 @@ ndlogs                                  # check LaunchAgent boot logs
 ```
 
 If network-dependent commands inside the machine hang (e.g. `ndtest` stuck
-at "Installing requirements"), the vmnet NAT has likely gone stale — see the
-README "Troubleshooting" section for the diagnosis and the container-system
-restart that fixes it.
+at "Installing requirements"), the vmnet NAT is likely broken — the known
+trigger is a Tailscale exit node active on the host (deactivating it is not
+enough; the NAT stays poisoned). See the README "Troubleshooting" section
+for the diagnosis and the container-system restart (exit node off) that
+fixes it.
 
 ---
 
