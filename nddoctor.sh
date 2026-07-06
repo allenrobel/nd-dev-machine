@@ -36,9 +36,10 @@ VENVS="${HOME}/.local/share/pipx/venvs"
 # normally has outbound network via the vmnet NAT, but that NAT can silently
 # go stale (see README "Troubleshooting"), leaving `pipx inject` unable to
 # reach PyPI. Populate it from macOS — the home directory is shared via
-# virtiofs, so the same path is visible inside the machine:
-#   python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
-#     --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
+# virtiofs, so the same path is visible inside the machine — with
+# populate-wheelhouse.sh, which reads the pins below and covers pydantic plus
+# the black/isort formatters in one shot:
+#   ./populate-wheelhouse.sh          # -> ~/.cache/nd-wheelhouse
 WHEELHOUSE="${ND_WHEELHOUSE:-${HOME}/.cache/nd-wheelhouse}"
 # markdownlint-cli pin — keep in sync with the Dockerfile. 0.44.0 is the last
 # release that runs on the image's Node 18 (>=0.45.0 needs Node >=20).
