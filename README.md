@@ -388,11 +388,11 @@ silently degrade the env. `nddoctor.sh` is the idempotent guard against that
 nddoctor          # check + heal all three venvs, print a status report
 ```
 
-The `ndpytest`, `ndmypy`, and `ndpylint` wrappers each call `nddoctor.sh run
-<tool>` first, so they **self-heal their own venv on every invocation** (quiet
-when already healthy) before running the tool. In normal use you never need to
-run `nddoctor` by hand — it's there for an explicit check after a rebuild or when
-something looks off.
+The `ndpytest`, `ndmypy`, `ndpylint`, `ndblack`, and `ndisort` wrappers each
+call `nddoctor.sh run <tool>` first, so they **self-heal their own venv on every
+invocation** (quiet when already healthy) before running the tool. In normal use
+you never need to run `nddoctor` by hand — it's there for an explicit check after
+a rebuild or when something looks off.
 
 **Offline resilience.** The machine normally has full outbound internet via
 the container system's vmnet NAT, but a Tailscale exit node on the host
@@ -430,15 +430,19 @@ pin lives in both `nd-provision.sh` (`BLACK_PIN` / `ISORT_PIN`, used at install
 time) and `nddoctor.sh` (used to verify/heal) — bump both together, and the
 collection's `uv.lock`, when the collection moves.
 
-`nddoctor` checks the installed version against the pin and heals any
-mismatch with a forced pipx reinstall (wheelhouse-first when offline, as
-above); `nddoctor run black` / `nddoctor run isort` heal-then-exec on demand.
+`nddoctor` checks the installed version against the pin and heals any mismatch
+with a forced pipx reinstall (wheelhouse-first when offline, as above). Prefer
+the `ndblack` / `ndisort` wrappers over `ndm black` / `ndm isort`: like
+`ndpylint` / `ndmypy` / `ndpytest` they route through `nddoctor.sh run <tool>`,
+so they **self-heal to the pinned version on every invocation** — a drifted
+formatter is corrected the next time you run it, not only when you remember to
+run `nddoctor`. (`ndm black` / `ndm isort` still work; they just skip the heal.)
 Both formatters read the collection's `pyproject.toml` (line length 159,
 `isort` on the `black` profile) when run from the collection root:
 
 ```bash
-ndm black --check plugins/module_utils/orchestrators/base_interface.py
-ndm isort --check-only plugins/module_utils/orchestrators/base_interface.py
+ndblack --check plugins/module_utils/orchestrators/base_interface.py
+ndisort --check-only plugins/module_utils/orchestrators/base_interface.py
 ```
 
 ### Markdown linting (markdownlint via npm)

@@ -128,6 +128,19 @@ function ndpylint {
     _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run pylint "$@"
 }
 
+# Run black inside the machine (self-heals black to its exact pinned version
+# first, so machine-side formatting can't drift from the editor venv / CI).
+# Run from the collection root so black picks up pyproject.toml (line length 159).
+function ndblack {
+    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run black "$@"
+}
+
+# Run isort inside the machine (self-heals isort to its exact pinned version
+# first). Run from the collection root so isort picks up pyproject.toml.
+function ndisort {
+    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run isort "$@"
+}
+
 # Run pytest inside the machine (self-heals pytest's pydantic first — without
 # it, the collection silently falls back to the pydantic compat shim).
 #
