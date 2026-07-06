@@ -405,13 +405,20 @@ directory is shared via virtiofs, so the same path is visible inside the
 machine:
 
 ```bash
-python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
-  --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
+./populate-wheelhouse.sh          # -> ~/.cache/nd-wheelhouse
 ```
 
-Add `'black==26.5.1' 'isort==8.0.1'` to that download (their deps come along
-automatically) if you also want the formatters to self-heal offline —
-`nddoctor` installs them from the same wheelhouse.
+`populate-wheelhouse.sh` reads the version pins straight from `nddoctor.sh`
+(`PIN` / `BLACK_PIN` / `ISORT_PIN`), so one command covers **everything**
+`nddoctor` heals — `pydantic` for the pytest / pylint / mypy venvs *and* the
+`black` / `isort` formatters (issue #23), with their transitive deps. Override
+the destination with `ND_WHEELHOUSE=/path`. The equivalent by hand:
+
+```bash
+python3 -m pip download 'pydantic>=2.12.5' 'black==26.5.1' 'isort==8.0.1' \
+  --platform manylinux_2_17_aarch64 --python-version 3.12 \
+  --only-binary=:all: -d ~/.cache/nd-wheelhouse
+```
 
 ### Python formatters (black + isort)
 
@@ -745,9 +752,8 @@ populate the wheelhouse from macOS first and let `nddoctor` do the offline
 install:
 
 ```bash
-python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
-  --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
-nddoctor
+./populate-wheelhouse.sh    # from macOS; covers pydantic + black + isort
+nddoctor                    # inside the machine; heals from the wheelhouse
 ```
 
 ### `uv sync` fails with Python version conflicts

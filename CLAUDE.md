@@ -107,8 +107,9 @@ every run (via `nddoctor.sh run <tool>`), so a drifted/missing pydantic is
 re-injected automatically before the tool runs. To check/heal all three venvs
 on demand (e.g. after a rebuild), run `nddoctor`. Healing installs from the
 local wheelhouse `~/.cache/nd-wheelhouse` when it has wheels (populate it
-from macOS with `pip download`; see the README "Python CLI tooling"
-section), falling back to PyPI otherwise — the wheelhouse keeps healing
+from macOS with `./populate-wheelhouse.sh`, which covers pydantic plus the
+black/isort formatters; see the README "Python CLI tooling" section),
+falling back to PyPI otherwise — the wheelhouse keeps healing
 working when the machine's NAT has been broken by a Tailscale exit node
 (see the README "Troubleshooting" section).
 
