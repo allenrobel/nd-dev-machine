@@ -41,7 +41,7 @@ nd-dev-machine/
 ├── Dockerfile                          ← Ubuntu 24.04 + systemd + Podman + Claude Code + markdownlint
 ├── first-boot.sh                       ← rootfs-only setup, runs once on first machine boot
 ├── nd-provision.sh                     ← home-side provisioning, run by setup.sh
-├── nddoctor.sh                         ← verify/self-heal the dev tools (pipx venvs, markdownlint)
+├── nddoctor.sh                         ← verify/self-heal the dev tools (pipx venvs, black/isort, markdownlint)
 ├── nd-dev.sh                           ← shell aliases (ndm, ndtest, ndlint, nddoctor, …)
 ├── nd-dns-override.service             ← guest unit: apply DNS override
 ├── nd-dns-override.path                ← guest watcher: re-apply on rewrite
@@ -353,11 +353,13 @@ container restarts.
 
 ### Python CLI tooling (pipx + pinned pydantic)
 
-The per-user dev tools — `ansible-lint`, `pylint`, `mypy`, and `pytest` — are
-installed by `nd-provision.sh` via **pipx**, each in its own isolated venv under
-`~/.local/share/pipx/venvs/`. Because those venvs are isolated, a system- or
-user-level `pydantic` is **not** visible inside them. Every tool that imports
-the collection's models needs `pydantic` injected explicitly:
+The per-user dev tools — `ansible-lint`, `pylint`, `mypy`, `pytest`, and the
+`black` / `isort` formatters — are installed by `nd-provision.sh` via **pipx**,
+each in its own isolated venv under `~/.local/share/pipx/venvs/`. Because those
+venvs are isolated, a system- or user-level `pydantic` is **not** visible inside
+them. Every tool that *imports the collection's models* needs `pydantic`
+injected explicitly (`black` / `isort` don't — they're covered in
+[Python formatters](#python-formatters-black--isort) below):
 
 | Tool | Why it needs pydantic |
 | --- | --- |
@@ -405,6 +407,38 @@ machine:
 ```bash
 python3 -m pip download 'pydantic>=2.12.5' --platform manylinux_2_17_aarch64 \
   --python-version 3.12 --only-binary=:all: -d ~/.cache/nd-wheelhouse
+```
+
+Add `'black==26.5.1' 'isort==8.0.1'` to that download (their deps come along
+automatically) if you also want the formatters to self-heal offline —
+`nddoctor` installs them from the same wheelhouse.
+
+### Python formatters (black + isort)
+
+The collection's pre-commit lint pass runs `black` and `isort` on the changed
+files, and its CLAUDE.md documents them as `ndm black <file>` / `ndm isort
+<file>` — so both must exist **inside** the machine (issue #23). Like the other
+Python CLI tools they are pipx-installed by `nd-provision.sh`, but unlike them
+they import nothing from the collection, so they need **no** `pydantic` inject.
+
+They are **exact-pinned** — `black==26.5.1`, `isort==8.0.1` — to the versions
+the collection's `uv.lock` resolves, so the machine formats code identically to
+the editor venv (`.venv-Darwin-arm64`) and to CI's pep8 job. This is a pin, not
+a floor: `black`'s output changes across its calendar-versioned releases, so a
+drifted version would reformat code differently and produce spurious diffs. The
+pin lives in both `nd-provision.sh` (`BLACK_PIN` / `ISORT_PIN`, used at install
+time) and `nddoctor.sh` (used to verify/heal) — bump both together, and the
+collection's `uv.lock`, when the collection moves.
+
+`nddoctor` checks the installed version against the pin and heals any
+mismatch with a forced pipx reinstall (wheelhouse-first when offline, as
+above); `nddoctor run black` / `nddoctor run isort` heal-then-exec on demand.
+Both formatters read the collection's `pyproject.toml` (line length 159,
+`isort` on the `black` profile) when run from the collection root:
+
+```bash
+ndm black --check plugins/module_utils/orchestrators/base_interface.py
+ndm isort --check-only plugins/module_utils/orchestrators/base_interface.py
 ```
 
 ### Markdown linting (markdownlint via npm)

@@ -64,9 +64,20 @@ ndpylint plugins/modules/nd_interface_loopback.py
 # mypy
 ndmypy plugins/modules/
 
+# black / isort (formatters — exact-pinned to the collection's uv.lock; run
+# from the collection root so they pick up pyproject.toml, line length 159)
+ndm black --check plugins/module_utils/orchestrators/base_interface.py
+ndm isort --check-only plugins/module_utils/orchestrators/base_interface.py
+
 # markdownlint (baked into the machine image via npm)
 ndm markdownlint README.md
 ```
+
+`black` and `isort` are pipx-installed by `nd-provision.sh` (issue #23) and
+version-pinned so machine-side formatting matches the editor venv and CI; they
+import nothing from the collection, so they need no pydantic inject. `nddoctor`
+verifies their pinned version and heals drift like the other tools — see the
+README "Python formatters" section.
 
 ---
 

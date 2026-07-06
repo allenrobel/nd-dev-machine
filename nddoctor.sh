@@ -16,9 +16,15 @@
 # docs call `ndm markdownlint`, which fails on machines built from an image
 # that predates the Dockerfile baking markdownlint-cli in.
 #
+# Also verifies the black / isort formatters (issue #23): the collection docs
+# call `ndm black` / `ndm isort`. These are pipx-installed but, unlike the
+# pydantic tools, import nothing from the collection — so instead of a pydantic
+# inject they are checked against an EXACT version pin (formatter output drifts
+# across releases; the machine must match the editor venv / CI).
+#
 # Usage:
 #   nddoctor.sh                       check + heal pytest, pylint, mypy,
-#                                     markdownlint; report
+#                                     black, isort, markdownlint; report
 #   nddoctor.sh run <tool> [args...]  heal <tool>'s venv quietly, then exec it
 #
 set -u
@@ -37,6 +43,12 @@ WHEELHOUSE="${ND_WHEELHOUSE:-${HOME}/.cache/nd-wheelhouse}"
 # markdownlint-cli pin — keep in sync with the Dockerfile. 0.44.0 is the last
 # release that runs on the image's Node 18 (>=0.45.0 needs Node >=20).
 MDL_PIN='markdownlint-cli@0.44.0'
+# black / isort formatter pins (issue #23) — EXACT, not floored: formatter
+# output drifts across releases, so a version mismatch means the machine would
+# reformat code differently from the editor venv / CI. Keep in sync with
+# nd-provision.sh (BLACK_PIN/ISORT_PIN) and the collection's uv.lock.
+BLACK_PIN='black==26.5.1'
+ISORT_PIN='isort==8.0.1'
 QUIET=0   # set to 1 in `run` mode: only speak when an action is taken
 
 note() { [ "$QUIET" -eq 1 ] || echo "[nddoctor] $*" >&2; }
@@ -137,6 +149,54 @@ ensure_markdownlint() {
     return 1
 }
 
+# Print the version of pipx package $1 as recorded in its own venv (empty if
+# the venv is absent). Package name == venv name for black / isort.
+tool_version() {
+    [ -x "${VENVS}/$1/bin/python" ] || return 0
+    "${VENVS}/$1/bin/python" \
+        -c "import importlib.metadata as m; print(m.version('$1'))" 2>/dev/null
+}
+
+# Ensure the pipx-installed formatter $1 (black / isort) is present at the
+# EXACT version in pin $2 (e.g. "black==26.5.1"). These import nothing from the
+# collection, so there is no pydantic to inject — but their output drifts across
+# releases, so a version mismatch is a real defect (the machine reformats code
+# differently from the editor venv / CI) and is healed by a forced reinstall.
+# Offline: prefer the wheelhouse (same rationale as inject_pydantic — a PyPI
+# attempt burns minutes of retries on the stale-NAT machine), fall back to PyPI.
+ensure_pinned_tool() {
+    tool="$1"
+    pin="$2"
+    want="${pin#*==}"
+    have="$(tool_version "$tool")"
+    if [ "$have" = "$want" ]; then
+        note "${tool}: ${have} OK"
+        return 0
+    fi
+    if [ -z "$have" ]; then
+        warn "${tool}: MISSING -> installing ${pin}"
+    else
+        warn "${tool}: ${have} != ${want} -> reinstalling ${pin}"
+    fi
+    if [ -n "$(ls "${WHEELHOUSE}"/*.whl 2>/dev/null)" ]; then
+        if pipx install --force "$pin" \
+            --pip-args="--no-index --find-links=${WHEELHOUSE}" >/dev/null 2>&1; then
+            warn "${tool}: $(tool_version "$tool") (healed)"
+            return 0
+        fi
+        warn "${tool}: wheelhouse install failed (${WHEELHOUSE}) -> trying PyPI"
+    fi
+    if pipx install --force "$pin" >/dev/null 2>&1; then
+        warn "${tool}: $(tool_version "$tool") (healed)"
+        return 0
+    fi
+    warn "${tool}: ERROR install failed — offline? Populate the wheelhouse from macOS:"
+    warn "  python3 -m pip download '${pin}' --platform manylinux_2_17_aarch64 --python-version 3.12 --only-binary=:all: -d '${WHEELHOUSE}'"
+    warn "  then re-run nddoctor (or: pipx install --force '${pin}')"
+    warn "  if the machine should be online, the vmnet NAT may be stale — see README Troubleshooting"
+    return 1
+}
+
 # pytest additionally needs the pytest-ansible plugin in its venv.
 ensure_pytest_ansible() {
     [ -x "${VENVS}/pytest/bin/python" ] || return 1
@@ -159,6 +219,10 @@ heal() {
             return $rc ;;
         markdownlint)
             ensure_markdownlint ;;
+        black)
+            ensure_pinned_tool black "$BLACK_PIN" ;;
+        isort)
+            ensure_pinned_tool isort "$ISORT_PIN" ;;
         *)
             ensure_pydantic "$1" ;;
     esac
@@ -176,11 +240,11 @@ fi
 
 # ── report mode: check/heal everything, summarise ─────────────────────────────
 rc=0
-for v in pytest pylint mypy markdownlint; do
+for v in pytest pylint mypy black isort markdownlint; do
     heal "$v" || rc=1
 done
 if [ "$rc" -eq 0 ]; then
-    note "all tools healthy (pydantic >= ${FLOOR}; markdownlint on PATH)"
+    note "all tools healthy (pydantic >= ${FLOOR}; black/isort pinned; markdownlint on PATH)"
 else
     warn "one or more tools need attention (see above)"
 fi
