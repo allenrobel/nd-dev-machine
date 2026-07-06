@@ -111,6 +111,15 @@ su - "${ND_USER}" -c "export HOME='${ND_HOME}'; podman system migrate" \
 # Version floor matches the collection's requirements.txt pin (the old <2.12
 # cap for issue #344 was dropped after CiscoDevNet/ansible-nd#377).
 PYDANTIC_PIN='pydantic>=2.12.5'
+# black / isort — the collection's pre-commit formatters (issue #23). Unlike the
+# pydantic tools they do NOT import the collection, so they need no inject. They
+# ARE exact-pinned (not floored) to the versions the collection's uv.lock
+# resolves, so the machine formats code identically to the editor venv
+# (.venv-Darwin-arm64) and CI — formatter output drifts across releases. Keep
+# these in sync with nddoctor.sh (BLACK_PIN/ISORT_PIN) and the collection's
+# uv.lock; nddoctor.sh enforces the exact version and heals any drift.
+BLACK_PIN='black==26.5.1'
+ISORT_PIN='isort==8.0.1'
 
 if ! command -v pipx > /dev/null 2>&1; then
     log "Installing pipx via apt..."
@@ -132,6 +141,8 @@ su - "${ND_USER}" -c "
     pipx inject mypy '${PYDANTIC_PIN}'
     have pytest       || pipx install pytest
     pipx inject pytest pytest-ansible '${PYDANTIC_PIN}'
+    have black        || pipx install '${BLACK_PIN}'
+    have isort        || pipx install '${ISORT_PIN}'
 " || log "WARNING: pipx installs failed — re-run: ndm sudo ${REPO_DIR}/nd-provision.sh ${ND_USER} ${ND_HOME}"
 
 # ── Shell environment additions (home-side rc files) ──────────────────────────
