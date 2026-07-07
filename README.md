@@ -47,7 +47,7 @@ nd-dev-machine/
 ├── nd-dns-override.path                ← guest watcher: re-apply on rewrite
 ├── nd-dns-override.timer               ← guest boot sweep for the override
 ├── ndm-env.sh                          ← env shim used by nd-dev.sh (auto-created by setup.sh)
-├── CLAUDE.md                           ← Claude Code instructions for the ND collection
+├── CLAUDE.md                           ← nd-dev tooling instructions (link to it via @import from a CLAUDE.md outside the ansible-nd repo)
 ├── com.apple.container.system.plist    ← LaunchAgent: start container system at login
 ├── com.user.container.nd-dev.plist     ← LaunchAgent: boot nd-dev machine at login
 ├── .gitignore                          ← ignores .tmp/ and ndm-env.sh
@@ -77,7 +77,7 @@ bash setup.sh
 4. Verify the home mount and `ansible-test` are working
 5. Install LaunchAgents for auto-start at login
 6. Wire shell aliases into `~/.zshrc` / `~/.bashrc`
-7. Install `CLAUDE.md` into the ND collection root (skipped if `CLAUDE.md` already exists in the ND collection root)
+7. Remind you how to link this repo's `CLAUDE.md` into your LLM context — via an `@<path>` import from a `CLAUDE.md` in the `cisco` namespace dir, *outside* the ansible-nd repo (nothing is copied or written; confirmed if the link already exists)
 8. Provision the macOS editor venv (`.venv-Darwin-arm64`) with the collection's deps via `uv sync`, so VS Code / Pylance resolves third-party imports (editor IntelliSense only — see [pyproject.toml configuration](#pyprojecttoml-configuration))
 9. Add `.ansible/`, `collections/`, and the per-platform uv venvs (`.venv`, `.venv-*/`) to your global git ignore (see [Git: ignoring machine-generated artifacts](#git-ignoring-machine-generated-artifacts))
 
