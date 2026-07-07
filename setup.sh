@@ -161,7 +161,7 @@ if container machine run -n nd-dev -- ls "${HOME}/ansible_collections/cisco/nd" 
 else
     warn "~/ansible_collections/cisco/nd not found on this machine — that's OK if"
     warn "you haven't checked it out on this Mac yet. Clone it first, then re-run"
-    warn "STEP 7 to install CLAUDE.md."
+    warn "STEP 7 for the CLAUDE.md linking reminder."
 fi
 
 # ansible-test check — use 'command -v': current ansible-core makes
@@ -270,25 +270,40 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-header "STEP 7 — Install CLAUDE.md into the ND collection"
+header "STEP 7 — Link the nd-dev CLAUDE.md into your LLM context"
 # ─────────────────────────────────────────────────────────────────────────────
 
-ND_COLLECTION="${HOME}/ansible_collections/cisco/nd"
+# This repo's CLAUDE.md is the single source of truth for the nd-dev tooling.
+# We deliberately do NOT copy it into the cisco/nd collection: that left an
+# uncommitted CLAUDE.md inside the ansible-nd git repo. Instead, link to it with
+# an `@<path>` import from a CLAUDE.md placed *outside* that repo — the cisco
+# namespace directory, one level above the `nd` collection, is ideal because the
+# link never shows up as a dirty file in ansible-nd. This step only prints the
+# reminder; it does not write into either repo.
+
+ND_NAMESPACE="${HOME}/ansible_collections/cisco"
 CLAUDE_MD_SRC="${SCRIPT_DIR}/CLAUDE.md"
-CLAUDE_MD_DST="${ND_COLLECTION}/CLAUDE.md"
+LINK_TARGET="${ND_NAMESPACE}/CLAUDE.md"
+IMPORT_LINE="@${CLAUDE_MD_SRC}"
+STALE_COPY="${ND_NAMESPACE}/nd/CLAUDE.md"
 
 if [ ! -f "${CLAUDE_MD_SRC}" ]; then
-    warn "Missing: ${CLAUDE_MD_SRC} — copy CLAUDE.md into ${SCRIPT_DIR} and re-run."
-elif [ ! -d "${ND_COLLECTION}" ]; then
-    warn "Collection not found at ${ND_COLLECTION}"
-    warn "Once checked out, install CLAUDE.md with:"
-    warn "  cp '${CLAUDE_MD_SRC}' '${CLAUDE_MD_DST}'"
-elif [ -f "${CLAUDE_MD_DST}" ]; then
-    warn "CLAUDE.md already exists at ${CLAUDE_MD_DST} — skipping to avoid overwrite."
-    warn "Review and merge manually from: ${CLAUDE_MD_SRC}"
+    warn "Missing: ${CLAUDE_MD_SRC} — this repo's CLAUDE.md is the link source."
+elif [ -f "${LINK_TARGET}" ] && grep -qF "${IMPORT_LINE}" "${LINK_TARGET}"; then
+    ok "Already linked from ${LINK_TARGET}"
 else
-    cp "${CLAUDE_MD_SRC}" "${CLAUDE_MD_DST}"
-    ok "CLAUDE.md installed at ${CLAUDE_MD_DST}"
+    note "To let your LLM see the nd-dev wrappers (ndtest, ndlint, ndm, …), add"
+    note "this import line to ${LINK_TARGET}:"
+    note "  ${IMPORT_LINE}"
+    note "That file sits in the collection namespace dir, above the cisco/nd git"
+    note "repo, so the link never becomes an uncommitted file in ansible-nd."
+fi
+
+# Flag (but don't touch) a CLAUDE.md left behind by older, copy-based setup runs.
+if [ -f "${STALE_COPY}" ]; then
+    warn "A copied CLAUDE.md exists at ${STALE_COPY} (from an older setup.sh)."
+    warn "It is no longer managed here — remove it to keep the ansible-nd repo clean:"
+    warn "  rm '${STALE_COPY}'"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
