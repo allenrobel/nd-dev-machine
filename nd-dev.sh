@@ -118,14 +118,85 @@ function nddoctor {
     _ndm_run "$_NDM_HOME" "$_NDM_REPO/nddoctor.sh" "$@"
 }
 
-# Run mypy inside the machine (self-heals mypy's pydantic first via nddoctor).
-function ndmypy {
-    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run mypy "$@"
+# Echo the collections namespace root for a directory: the grandparent of
+# `ansible_collections/` (e.g. /Users/<you>), or _NDM_HOME as a fallback when the
+# cwd isn't inside such a tree. `ansible_collections.cisco.nd` maps to
+# `<root>/ansible_collections/cisco/nd`, so this is the value pytest
+# (ANSIBLE_COLLECTIONS_PATH), pylint (PYTHONPATH) and mypy (its run directory)
+# all need to resolve `import ansible_collections.cisco.nd.*` without a symlink
+# farm.
+# Usage: root="$(_nd_collections_root "$(pwd)")"
+function _nd_collections_root {
+    local cwd="$1" acp
+    acp="${cwd%/ansible_collections/*}"        # grandparent of ansible_collections/
+    [ "$acp" = "$cwd" ] && acp="$_NDM_HOME"    # fallback if not inside such a tree
+    printf '%s\n' "$acp"
 }
 
-# Run pylint inside the machine (self-heals pylint's pydantic first).
+# Run mypy inside the machine (self-heals mypy's pydantic first via nddoctor),
+# with `ansible_collections.cisco.nd.*` cross-collection imports resolving
+# instead of being reported import-not-found and silently treated as Any.
+# See issue #27.
+#
+# mypy is run from the collections namespace root (grandparent of
+# `ansible_collections/`, e.g. /Users/<you>) so that root is the ONE package base
+# and every file — the target passed on the CLI *and* its transitive imports —
+# gets the single name `ansible_collections.cisco.nd.…`. Running from the
+# collection root instead makes the collection root a competing (longer) base, so
+# the target is named `plugins.module_utils.…` while its imports are named
+# `ansible_collections.…` — the same file under two names, which mypy rejects with
+# "Source file found twice under different module names".
+#
+# Flags/behaviour:
+#   --namespace-packages --explicit-package-bases  descend into the PEP 420
+#       `ansible_collections/` tree (no __init__.py) and derive module names from
+#       the package base rather than by walking __init__.py upward.
+#   --follow-imports=silent  imports are type-resolved (not Any) but errors are
+#       reported only for the file(s) you pass — matches the issue's verified
+#       behaviour and keeps a single-file run from surfacing the whole dependency
+#       tree's latent errors. This overrides the collection's follow_imports=normal
+#       for machine-side runs only.
+#   --config-file <collection pyproject.toml>  since we no longer run from the
+#       collection root, point mypy back at its [tool.mypy] config (incl. the
+#       pydantic.mypy plugin) explicitly.
+# Caller-relative path args are rewritten to absolute (mypy's cwd is the namespace
+# root, not the caller's); flags and already-absolute paths pass through untouched.
+function ndmypy {
+    local cwd acp cfgdir arg
+    local -a cfgopt=() margs=()
+    cwd="$(pwd)"
+    acp="$(_nd_collections_root "$cwd")"
+    # Locate the collection's pyproject.toml (walk up from cwd, stop at acp).
+    cfgdir="$cwd"
+    while [ "$cfgdir" != "$acp" ] && [ "$cfgdir" != "/" ]; do
+        if [ -f "$cfgdir/pyproject.toml" ]; then
+            cfgopt=(--config-file "$cfgdir/pyproject.toml")
+            break
+        fi
+        cfgdir="$(dirname "$cfgdir")"
+    done
+    # Rewrite caller-relative paths to absolute; leave flags / absolute paths as-is.
+    for arg in "$@"; do
+        if [ -e "$cwd/$arg" ]; then
+            margs+=("$cwd/$arg")
+        else
+            margs+=("$arg")
+        fi
+    done
+    _ndm_run "$acp" "$_NDM_REPO/nddoctor.sh" run mypy \
+        --namespace-packages --explicit-package-bases --follow-imports=silent \
+        "${cfgopt[@]}" "${margs[@]}"
+}
+
+# Run pylint inside the machine (self-heals pylint's pydantic first). PYTHONPATH
+# points at the collections namespace root so `ansible_collections.cisco.nd.*`
+# imports resolve instead of raising spurious E0401 import-error. See issue #27.
 function ndpylint {
-    _ndm_run "$(pwd)" "$_NDM_REPO/nddoctor.sh" run pylint "$@"
+    local cwd acp
+    cwd="$(pwd)"
+    acp="$(_nd_collections_root "$cwd")"
+    _ndm_run "$cwd" env "PYTHONPATH=$acp" \
+        "$_NDM_REPO/nddoctor.sh" run pylint "$@"
 }
 
 # Run black inside the machine (self-heals black to its exact pinned version
@@ -161,8 +232,7 @@ function ndisort {
 function ndpytest {
     local cwd acp
     cwd="$(pwd)"
-    acp="${cwd%/ansible_collections/*}"        # grandparent of ansible_collections/
-    [ "$acp" = "$cwd" ] && acp="$_NDM_HOME"    # fallback if not inside such a tree
+    acp="$(_nd_collections_root "$cwd")"
     _ndm_run "$cwd" env \
         "ANSIBLE_COLLECTIONS_PATH=$acp" \
         "ANSIBLE_HOME=/tmp/nd-ansible-home" \
