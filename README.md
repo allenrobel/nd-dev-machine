@@ -471,7 +471,13 @@ it both tools emit spurious errors for every cross-collection import — pylint
 treat the imported symbols as `Any` so the boundary isn't actually type-checked.
 
 - **`ndpylint`** puts the namespace root on `PYTHONPATH`; the phantom `E0401`s
-  disappear (a real file jumps from ~8/10 to 10/10).
+  disappear (a real file jumps from ~8/10 to 10/10). It also appends
+  **ansible-core**'s location so `import ansible.module_utils.*` resolves too —
+  ansible-core lives in the machine's system site-packages, not in pylint's
+  isolated pipx venv, so without it those imports raise a spurious `E0401`
+  (issue #29). That append happens inside `nddoctor.sh run pylint` (which already
+  runs in-machine), derived from `ansible.__file__` so it's python-version
+  agnostic, and is a graceful no-op if ansible isn't importable.
 - **`ndmypy`** is run **from** the namespace root so that root is the single
   package base and every file — the CLI target and its transitive imports — gets
   one module name (`ansible_collections.cisco.nd.…`). Running from the collection

@@ -236,6 +236,19 @@ if [ "${1:-}" = "run" ]; then
     tool="$2"
     shift 2
     heal "$tool" || true   # a heal warning must not block the run
+    if [ "$tool" = "pylint" ]; then
+        # ansible-core lives in the machine's system site-packages, not in
+        # pylint's isolated pipx venv, so `import ansible.module_utils.*` raises a
+        # spurious E0401 (import-error). ndpylint already puts the collections
+        # namespace root on PYTHONPATH (issue #27) — that fixes
+        # `ansible_collections.*` but not `ansible.*`. Append ansible-core's
+        # location here (derived from ansible.__file__, so it's python-version
+        # agnostic — no hardcoded 3.12 path). Must be derived in-machine: this
+        # runs inside the container, unlike the ndpylint shell function on the
+        # macOS host. Graceful no-op if ansible isn't importable. See issue #29.
+        acore="$(python3 -c 'import ansible, os; print(os.path.dirname(os.path.dirname(ansible.__file__)))' 2>/dev/null)"
+        [ -n "$acore" ] && export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$acore"
+    fi
     exec "$tool" "$@"
 fi
 
