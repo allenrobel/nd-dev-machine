@@ -452,6 +452,45 @@ ndblack --check plugins/module_utils/orchestrators/base_interface.py
 ndisort --check-only plugins/module_utils/orchestrators/base_interface.py
 ```
 
+### Cross-collection imports (ndmypy / ndpylint)
+
+The collection lives at `…/ansible_collections/cisco/nd`, and its modules import
+each other by the fully-qualified namespace path, e.g.
+
+```python
+from ansible_collections.cisco.nd.plugins.module_utils.enums import ...
+```
+
+For those imports to resolve, the tool needs the **collections namespace root**
+— the grandparent of `ansible_collections/` (e.g. `/Users/<you>`) — on its
+search path. `ndpytest` already derives this (it exports it as
+`ANSIBLE_COLLECTIONS_PATH`); `ndmypy` and `ndpylint` now derive the same value
+via the shared `_nd_collections_root` helper in `nd-dev.sh` (issue #27). Without
+it both tools emit spurious errors for every cross-collection import — pylint
+`E0401 (import-error)`, mypy `import-not-found` — and, worse for mypy, silently
+treat the imported symbols as `Any` so the boundary isn't actually type-checked.
+
+- **`ndpylint`** puts the namespace root on `PYTHONPATH`; the phantom `E0401`s
+  disappear (a real file jumps from ~8/10 to 10/10).
+- **`ndmypy`** is run **from** the namespace root so that root is the single
+  package base and every file — the CLI target and its transitive imports — gets
+  one module name (`ansible_collections.cisco.nd.…`). Running from the collection
+  root instead makes the collection root a competing base, so mypy sees the same
+  file under two names and aborts with *"Source file found twice under different
+  module names."* It also passes `--namespace-packages --explicit-package-bases`
+  (to descend into the `__init__.py`-less `ansible_collections/` tree and name
+  files by package base), `--follow-imports=silent` (imports are type-resolved
+  but errors are reported only for the file(s) you pass, so a single-file check
+  doesn't surface the whole dependency tree's latent errors), and
+  `--config-file <collection pyproject.toml>` (since it no longer runs from the
+  collection root, it's pointed back at the `[tool.mypy]` config, including the
+  `pydantic.mypy` plugin). Caller-relative path arguments are rewritten to
+  absolute automatically.
+
+Both are wrapper-side because a committed collection config can't carry a
+machine-specific path — and `pylint` in particular can't get the path from
+committed config without a hardcoded `init-hook`.
+
 ### Markdown linting (markdownlint via npm)
 
 The collection's CLAUDE.md documents `ndm markdownlint <file>.md`, so the
