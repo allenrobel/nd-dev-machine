@@ -111,6 +111,10 @@ su - "${ND_USER}" -c "export HOME='${ND_HOME}'; podman system migrate" \
 # Version floor matches the collection's requirements.txt pin (the old <2.12
 # cap for issue #344 was dropped after CiscoDevNet/ansible-nd#377).
 PYDANTIC_PIN='pydantic>=2.12.5'
+# pytest also needs the collection's own runtime deps that its unit tests
+# import (requirements.txt / tests/unit/requirements.txt): jsonpath-ng is used
+# by plugins/module_utils/ndi.py and the action-plugin tests. Unpinned, like
+# pytest-ansible; nddoctor.sh re-injects it if it goes missing.
 # black / isort — the collection's pre-commit formatters (issue #23). Unlike the
 # pydantic tools they do NOT import the collection, so they need no inject. They
 # ARE exact-pinned (not floored) to the versions the collection's uv.lock
@@ -140,7 +144,7 @@ su - "${ND_USER}" -c "
     have mypy         || pipx install mypy
     pipx inject mypy '${PYDANTIC_PIN}'
     have pytest       || pipx install pytest
-    pipx inject pytest pytest-ansible '${PYDANTIC_PIN}'
+    pipx inject pytest pytest-ansible jsonpath-ng '${PYDANTIC_PIN}'
     have black        || pipx install '${BLACK_PIN}'
     have isort        || pipx install '${ISORT_PIN}'
 " || log "WARNING: pipx installs failed — re-run: ndm sudo ${REPO_DIR}/nd-provision.sh ${ND_USER} ${ND_HOME}"

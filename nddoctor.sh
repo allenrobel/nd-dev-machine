@@ -198,15 +198,22 @@ ensure_pinned_tool() {
     return 1
 }
 
-# pytest additionally needs the pytest-ansible plugin in its venv.
-ensure_pytest_ansible() {
+# pytest additionally needs the pytest-ansible plugin and jsonpath-ng in its
+# venv. jsonpath-ng is one of the collection's own runtime deps
+# (requirements.txt / tests/unit/requirements.txt, imported by
+# plugins/module_utils/ndi.py and the action-plugin tests); without it those
+# tests fail at import. Both are unpinned and PyPI-only (not in the
+# wheelhouse). Keep this list in sync with nd-provision.sh.
+# Usage: ensure_pytest_extra <import-name> <dist-name>
+ensure_pytest_extra() {
+    local mod="$1" dist="$2"
     [ -x "${VENVS}/pytest/bin/python" ] || return 1
-    if "${VENVS}/pytest/bin/python" -c 'import pytest_ansible' 2>/dev/null; then
+    if "${VENVS}/pytest/bin/python" -c "import ${mod}" 2>/dev/null; then
         return 0
     fi
-    warn "pytest: pytest-ansible MISSING -> injecting"
-    pipx inject pytest pytest-ansible >/dev/null 2>&1 \
-        || { warn "pytest: ERROR pytest-ansible inject failed"; return 1; }
+    warn "pytest: ${dist} MISSING -> injecting"
+    pipx inject pytest "${dist}" >/dev/null 2>&1 \
+        || { warn "pytest: ERROR ${dist} inject failed"; return 1; }
 }
 
 # Heal a single tool's venv (venv name == tool name for the pipx three);
@@ -216,7 +223,8 @@ heal() {
         pytest)
             rc=0
             ensure_pydantic pytest || rc=1
-            ensure_pytest_ansible || rc=1
+            ensure_pytest_extra pytest_ansible pytest-ansible || rc=1
+            ensure_pytest_extra jsonpath_ng jsonpath-ng || rc=1
             return $rc ;;
         markdownlint)
             ensure_markdownlint ;;

@@ -378,6 +378,12 @@ collection silently falls back to its pydantic compat shim (where
 `model_post_init` never fires) and the orchestrator tests pass for the wrong
 reason. The pin keeps the machine's local test env matching CI on every rebuild.
 
+The `pytest` venv additionally gets `pytest-ansible` (the plugin `ndpytest`
+drives) and `jsonpath-ng` (a runtime dep of the collection listed in its
+`requirements.txt` / `tests/unit/requirements.txt`, imported by
+`plugins/module_utils/ndi.py` and the action-plugin tests). Both are unpinned
+and `nddoctor` re-injects either one if it goes missing.
+
 **Self-healing.** `nd-provision.sh` injects these at provisioning time, so any
 later drift (a failed inject, a partial manual recovery, a rebuild) could
 silently degrade the env. `nddoctor.sh` is the idempotent guard against that
